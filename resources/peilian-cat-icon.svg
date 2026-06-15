@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="104" y1="72" x2="920" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff4c7"/>
+      <stop offset="0.46" stop-color="#7dd3c0"/>
+      <stop offset="1" stop-color="#17695d"/>
+    </linearGradient>
+    <linearGradient id="book" x1="220" y1="570" x2="804" y2="828" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffdf6"/>
+      <stop offset="1" stop-color="#f7ead3"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="30" stdDeviation="32" flood-color="#0f3f38" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <circle cx="806" cy="204" r="86" fill="#f7bd62" opacity="0.88"/>
+  <path d="M206 748c-54 18-96 54-122 108 68-8 122-29 162-64" fill="#fff8d9" opacity="0.38"/>
+  <g filter="url(#shadow)">
+    <path d="M273 355 234 205c-9-34 31-60 59-38l124 94c30-9 62-14 96-14 35 0 68 5 98 15l124-95c28-22 68 4 59 38l-39 154c52 56 83 130 83 212 0 178-145 322-324 322S190 749 190 571c0-83 31-158 83-216Z" fill="#fffdf6"/>
+    <path d="M300 341 276 248l80 60c-20 9-39 20-56 33Zm424 0 24-93-80 60c20 9 39 20 56 33Z" fill="#f4b85d"/>
+    <circle cx="398" cy="514" r="38" fill="#263332"/>
+    <circle cx="626" cy="514" r="38" fill="#263332"/>
+    <circle cx="384" cy="500" r="11" fill="#fff"/>
+    <circle cx="612" cy="500" r="11" fill="#fff"/>
+    <path d="M512 568c-19 0-36-7-49-19-11-10-4-29 11-29h76c15 0 22 19 11 29-13 12-30 19-49 19Z" fill="#f47f6b"/>
+    <path d="M462 621c24 30 76 30 100 0" fill="none" stroke="#263332" stroke-width="21" stroke-linecap="round"/>
+    <path d="M318 590c-48-12-88-8-122 11m632-11c48-12 88-8 122 11M326 650c-50 0-89 15-120 43m492-43c50 0 89 15 120 43" stroke="#60706d" stroke-width="17" stroke-linecap="round" opacity="0.7"/>
+  </g>
+  <g filter="url(#shadow)">
+    <path d="M233 694c76-34 166-31 270 9v151c-105-43-195-45-270-9V694Z" fill="url(#book)"/>
+    <path d="M791 694c-76-34-166-31-270 9v151c105-43 195-45 270-9V694Z" fill="#fff8eb"/>
+    <path d="M512 697v158" stroke="#d8c8a6" stroke-width="18" stroke-linecap="round"/>
+    <path d="M305 748h118M305 792h92M601 748h118M601 792h92" stroke="#2f7d6d" stroke-width="20" stroke-linecap="round"/>
+    <text x="512" y="805" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="62" font-weight="800" fill="#f47f6b">A+</text>
+  </g>
+  <path d="M822 370h52m-26-26v52M173 359h42m-21-21v42" stroke="#fffdf6" stroke-width="22" stroke-linecap="round" opacity="0.9"/>
+  <path d="M784 460c30 8 48 27 56 58 9-31 27-50 57-58-30-8-48-27-57-58-8 31-26 50-56 58Z" fill="#fff4c7"/>
+</svg>

@@ -1,0 +1,51 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  ArticleCard,
+  ArticleGenerationProgress,
+  ArticlePackage,
+  GenerateMomentsRequest,
+  GenerateMomentImageRequest,
+  GenerateScriptRequest,
+  ModelConfigInput,
+  PromptTemplateInput,
+  PromptPreviewRequest,
+  VideoScript
+} from '../shared/types';
+
+contextBridge.exposeInMainWorld('electron', {
+  searchHotTopics: (topic: string) => ipcRenderer.invoke('search-hot-topics', topic),
+  generateScript: (data: GenerateScriptRequest) => ipcRenderer.invoke('generate-script', data),
+  exportScript: (script: VideoScript, format: 'txt' | 'md' | 'pdf') =>
+    ipcRenderer.invoke('export-script', script, format),
+  rewriteMoments: (text: string, style: string) => ipcRenderer.invoke('rewrite-moments', text, style),
+  generateMomentTexts: (data: GenerateMomentsRequest) =>
+    ipcRenderer.invoke('generate-moment-texts', data),
+  generateMomentImage: (data: GenerateMomentImageRequest) =>
+    ipcRenderer.invoke('generate-moment-image', data),
+  generateMomentsWithImage: (data: GenerateMomentsRequest) =>
+    ipcRenderer.invoke('generate-moments-with-image', data),
+  downloadImage: (base64Image: string, fileName?: string) =>
+    ipcRenderer.invoke('download-image', base64Image, fileName),
+  generateArticle: (topic: string) => ipcRenderer.invoke('generate-article', topic),
+  generateArticleWithProgress: (topic: string, requestId: string) =>
+    ipcRenderer.invoke('generate-article-with-progress', topic, requestId),
+  onArticleGenerationProgress: (callback: (progress: ArticleGenerationProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: ArticleGenerationProgress): void => callback(progress);
+    ipcRenderer.on('article-generation-progress', listener);
+    return () => ipcRenderer.removeListener('article-generation-progress', listener);
+  },
+  exportArticlePackage: (article: ArticlePackage) => ipcRenderer.invoke('export-article-package', article),
+  exportArticleText: (article: ArticlePackage) => ipcRenderer.invoke('export-article-text', article),
+  regenerateArticleImage: (card: ArticleCard) => ipcRenderer.invoke('regenerate-article-image', card),
+  listModels: () => ipcRenderer.invoke('list-models'),
+  saveModel: (input: ModelConfigInput) => ipcRenderer.invoke('save-model', input),
+  deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
+  checkModel: (input: ModelConfigInput) => ipcRenderer.invoke('check-model', input),
+  listPromptTemplates: () => ipcRenderer.invoke('list-prompt-templates'),
+  savePromptTemplate: (input: PromptTemplateInput) => ipcRenderer.invoke('save-prompt-template', input),
+  deletePromptTemplate: (id: string) => ipcRenderer.invoke('delete-prompt-template', id),
+  previewPrompt: (request: PromptPreviewRequest) => ipcRenderer.invoke('preview-prompt', request),
+  syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url)
+});

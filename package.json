@@ -1,0 +1,71 @@
+{
+  "name": "peilian-cat-toolkit",
+  "version": "0.1.0",
+  "description": "陪练猫工具包 desktop app",
+  "main": "out/main/main.js",
+  "author": "Peilian Cat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "dist": "npm run build && electron-builder",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test:models": "node scripts/model-connectivity-smoke.mjs",
+    "test:electron-models": "node scripts/electron-model-ui-smoke.mjs",
+    "test:real-model-output": "node scripts/real-model-output-smoke.mjs",
+    "test:full-flow": "node scripts/full-flow-smoke.mjs",
+    "test:real-article-flow": "node scripts/real-article-flow-smoke.mjs",
+    "test:real-moments-flow": "node scripts/real-moments-flow-smoke.mjs",
+    "test:real-moments-reference": "node scripts/real-moments-reference-image-smoke.mjs",
+    "test:prompt-sync": "node scripts/prompt-sync-smoke.mjs"
+  },
+  "dependencies": {
+    "@ant-design/icons": "latest",
+    "antd": "latest",
+    "dotenv": "latest",
+    "jszip": "latest",
+    "lucide-react": "latest",
+    "pdfkit": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pdfkit": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "5.1.1",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "5.0.0",
+    "playwright": "latest",
+    "typescript": "latest",
+    "vite": "7.3.5"
+  },
+  "build": {
+    "appId": "com.peiliancat.toolkit",
+    "productName": "陪练猫工具包",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "resources/peilian-cat-icon.ico",
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

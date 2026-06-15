@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "peilian-cat-admin",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-06-15",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "peilianmao001.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "PUBLIC_BASE_URL": "https://peilianmao001.com"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CONFIG",
+      "id": "5d5556fbdab14fd482f26babbfbc0b83"
+    }
+  ]
+}

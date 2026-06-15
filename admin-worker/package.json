@@ -1,0 +1,15 @@
+{
+  "name": "peilian-cat-admin-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "seed": "wrangler kv key put app:config --path ./seed/config.json --binding=CONFIG",
+    "test": "node --test ./test/worker.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.100.0"
+  }
+}
