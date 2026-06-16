@@ -8,6 +8,7 @@ import type {
   ModelKind,
   ModelProvider,
   PromptConfigMeta,
+  UpdateCheckResult,
   UpdateDownloadResult
 } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
@@ -30,6 +31,8 @@ const DEFAULT_MODEL_INPUT: ModelConfigInput = {
   enabled: true
 };
 
+type UpdatePanelResult = UpdateCheckResult & Partial<Pick<UpdateDownloadResult, 'downloaded' | 'filePath' | 'message'>>;
+
 export function BackendManagerPage(): JSX.Element {
   return (
     <div className="single-column">
@@ -48,20 +51,37 @@ export function BackendManagerPage(): JSX.Element {
 
 function UpdatePanel(): JSX.Element {
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<UpdateDownloadResult | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [result, setResult] = useState<UpdatePanelResult | null>(null);
   const [error, setError] = useState('');
 
-  async function downloadLatestVersion(): Promise<void> {
+  async function checkLatestVersion(): Promise<void> {
     setChecking(true);
+    setError('');
+    try {
+      const update = await window.electron.checkForUpdates();
+      setResult(update);
+      update.hasUpdate
+        ? message.info(`发现新版本 ${update.latestVersion}，可立刻更新。`)
+        : message.success(`当前版本 ${update.currentVersion} 已是最新。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '检查更新失败，请稍后重试');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function downloadLatestVersion(): Promise<void> {
+    setUpdating(true);
     setError('');
     try {
       const update = await window.electron.downloadLatestUpdate();
       setResult(update);
       message.success(update.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '版本更新失败，请稍后重试');
+      setError(err instanceof Error ? err.message : '立刻更新失败，请稍后重试');
     } finally {
-      setChecking(false);
+      setUpdating(false);
     }
   }
 
@@ -72,11 +92,20 @@ function UpdatePanel(): JSX.Element {
         <Space direction="vertical" size={16} className="full-width">
           <div className="model-note">
             <DownloadCloud size={18} />
-            <span>点击后会连接后台读取最新版本，在软件内下载最新安装包，下载完成后自动打开安装程序。</span>
+            <span>先连接后台读取最新版本；发现新版本后可在软件内直接下载安装包并打开安装程序，不会跳转网页。</span>
           </div>
           <Space wrap>
-            <Button type="primary" icon={<DownloadCloud size={16} />} loading={checking} onClick={downloadLatestVersion}>
-              {checking ? '正在下载更新' : '版本更新'}
+            <Button icon={<RefreshCw size={16} />} loading={checking} disabled={updating} onClick={checkLatestVersion}>
+              {checking ? '正在检查更新' : '检查更新'}
+            </Button>
+            <Button
+              type="primary"
+              icon={<DownloadCloud size={16} />}
+              loading={updating}
+              disabled={checking}
+              onClick={downloadLatestVersion}
+            >
+              {updating ? '正在更新' : '立刻更新'}
             </Button>
           </Space>
           {result && (
