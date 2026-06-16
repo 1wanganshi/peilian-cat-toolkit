@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -30,20 +31,27 @@ try {
   const page = await waitForUsableWindow(app);
   const result = await page.evaluate(async () => {
     const sync = await window.electron.syncPromptTemplatesFromBackend();
-    const templates = await window.electron.listPromptTemplates();
-    return { sync, templates };
+    return {
+      sync,
+      canReadPromptsInRenderer: typeof window.electron.listPromptTemplates === 'function'
+    };
   });
 
   assert.ok(result.sync.imported >= 1, 'expected at least one prompt imported from backend');
+  assert.equal(result.canReadPromptsInRenderer, false, 'renderer should not be able to read prompt templates');
+
+  const rawPrompts = await readFile(resolve(userDataDir, 'prompts.json'), 'utf8');
+  const templates = JSON.parse(rawPrompts);
   assert.ok(
-    result.templates.some((item) => item.id === 'sync-smoke-moments-generate'),
+    templates.some((item) => item.id === 'sync-smoke-moments-generate'),
     'synced backend prompt not found in local app templates'
   );
 
   console.log('prompt sync smoke passed');
   console.log(JSON.stringify({
     imported: result.sync.imported,
-    localTemplates: result.templates.length
+    rendererPromptAccess: result.canReadPromptsInRenderer,
+    localTemplates: templates.length
   }, null, 2));
 } finally {
   if (app) await app.close();

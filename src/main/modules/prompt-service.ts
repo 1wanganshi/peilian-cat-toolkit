@@ -1,13 +1,7 @@
 import { app } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type {
-  PromptPreviewRequest,
-  PromptPreviewResult,
-  PromptScenario,
-  PromptTemplate,
-  PromptTemplateInput
-} from '../../shared/types';
+import type { PromptScenario, PromptSyncResult, PromptTemplate } from '../../shared/types';
 import { RemoteConfigService } from './remote-config-service';
 
 const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> = [
@@ -230,7 +224,7 @@ export class PromptService {
     return this.readTemplates();
   }
 
-  async syncRemoteTemplates(): Promise<{ imported: number; templates: PromptTemplate[] }> {
+  async syncRemoteTemplates(): Promise<PromptSyncResult> {
     const remoteTemplates = await this.remoteConfigService.listRemotePrompts();
     const validRemoteTemplates = remoteTemplates.filter((item) => item.enabled && item.scenario && item.template);
     if (validRemoteTemplates.length === 0) {
@@ -249,50 +243,7 @@ export class PromptService {
       ...localFallbacks
     ];
     await this.writeTemplates(syncedTemplates);
-    return { imported: validRemoteTemplates.length, templates: syncedTemplates };
-  }
-
-  async saveTemplate(input: PromptTemplateInput): Promise<PromptTemplate> {
-    this.validateInput(input);
-    const templates = await this.readTemplates();
-    const now = new Date().toISOString();
-    const index = input.id ? templates.findIndex((item) => item.id === input.id) : -1;
-    const existing = index >= 0 ? templates[index] : undefined;
-    const template: PromptTemplate = {
-      id: existing?.id ?? crypto.randomUUID(),
-      scenario: input.scenario,
-      name: input.name.trim(),
-      description: input.description.trim(),
-      requiredVariables: input.requiredVariables.map((item) => item.trim()).filter(Boolean),
-      template: input.template,
-      enabled: input.enabled,
-      builtIn: existing?.builtIn ?? false,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now
-    };
-
-    if (index >= 0) {
-      templates[index] = template;
-    } else {
-      templates.unshift(template);
-    }
-
-    await this.writeTemplates(templates);
-    return template;
-  }
-
-  async deleteTemplate(id: string): Promise<void> {
-    const templates = await this.readTemplates();
-    await this.writeTemplates(templates.filter((item) => item.id !== id));
-  }
-
-  async previewPrompt(request: PromptPreviewRequest): Promise<PromptPreviewResult> {
-    const template = request.template ?? await this.resolveTemplateText(request);
-    return {
-      id: request.id,
-      scenario: request.scenario,
-      prompt: this.renderTemplate(template, request.variables)
-    };
+    return { imported: validRemoteTemplates.length, syncedAt: new Date().toISOString() };
   }
 
   async buildPrompt(scenario: PromptScenario, variables: Record<string, unknown>): Promise<string> {
@@ -305,17 +256,6 @@ export class PromptService {
     }
 
     return this.renderTemplate(template.template, variables);
-  }
-
-  private async resolveTemplateText(request: PromptPreviewRequest): Promise<string> {
-    const templates = await this.listTemplates();
-    const template = request.id
-      ? templates.find((item) => item.id === request.id)
-      : templates.find((item) => item.scenario === request.scenario && item.enabled) ??
-        templates.find((item) => item.scenario === request.scenario);
-
-    if (!template) throw new Error('未找到提示词模板');
-    return template.template;
   }
 
   private renderTemplate(template: string, variables: Record<string, unknown>): string {
@@ -355,11 +295,6 @@ export class PromptService {
   private defaultTemplates(): PromptTemplate[] {
     const now = new Date().toISOString();
     return DEFAULT_TEMPLATES.map((item) => ({ ...item, createdAt: now, updatedAt: now }));
-  }
-
-  private validateInput(input: PromptTemplateInput): void {
-    if (!input.name.trim()) throw new Error('请输入提示词名称');
-    if (!input.template.trim()) throw new Error('请输入提示词内容');
   }
 
   private text(value: unknown): string {

@@ -227,7 +227,7 @@ export interface PromptPreviewResult {
 
 export interface PromptSyncResult {
   imported: number;
-  templates: PromptTemplate[];
+  syncedAt: string;
 }
 
 export type ElectronApi = {
@@ -249,10 +249,6 @@ export type ElectronApi = {
   saveModel: (input: ModelConfigInput) => Promise<ModelConfig>;
   deleteModel: (id: string) => Promise<void>;
   checkModel: (input: ModelConfigInput) => Promise<ModelCheckResult>;
-  listPromptTemplates: () => Promise<PromptTemplate[]>;
-  savePromptTemplate: (input: PromptTemplateInput) => Promise<PromptTemplate>;
-  deletePromptTemplate: (id: string) => Promise<void>;
-  previewPrompt: (request: PromptPreviewRequest) => Promise<PromptPreviewResult>;
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
   openExternalUrl: (url: string) => Promise<void>;

@@ -128,10 +128,6 @@ function registerHandlers(): void {
   ipcMain.handle('save-model', async (_event, input) => modelManager.saveModel(input));
   ipcMain.handle('delete-model', async (_event, id: string) => modelManager.deleteModel(id));
   ipcMain.handle('check-model', async (_event, input) => modelManager.checkModel(input));
-  ipcMain.handle('list-prompt-templates', async () => promptService.listTemplates());
-  ipcMain.handle('save-prompt-template', async (_event, input) => promptService.saveTemplate(input));
-  ipcMain.handle('delete-prompt-template', async (_event, id: string) => promptService.deleteTemplate(id));
-  ipcMain.handle('preview-prompt', async (_event, request) => promptService.previewPrompt(request));
   ipcMain.handle('sync-prompt-templates-from-backend', async () => promptService.syncRemoteTemplates());
   ipcMain.handle('check-for-updates', async () => remoteConfigService.checkUpdate(app.getVersion()));
   ipcMain.handle('open-external-url', async (_event, url: string) => {

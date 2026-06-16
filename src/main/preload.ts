@@ -7,8 +7,6 @@ import type {
   GenerateMomentImageRequest,
   GenerateScriptRequest,
   ModelConfigInput,
-  PromptTemplateInput,
-  PromptPreviewRequest,
   VideoScript
 } from '../shared/types';
 
@@ -41,10 +39,6 @@ contextBridge.exposeInMainWorld('electron', {
   saveModel: (input: ModelConfigInput) => ipcRenderer.invoke('save-model', input),
   deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
   checkModel: (input: ModelConfigInput) => ipcRenderer.invoke('check-model', input),
-  listPromptTemplates: () => ipcRenderer.invoke('list-prompt-templates'),
-  savePromptTemplate: (input: PromptTemplateInput) => ipcRenderer.invoke('save-prompt-template', input),
-  deletePromptTemplate: (id: string) => ipcRenderer.invoke('delete-prompt-template', id),
-  previewPrompt: (request: PromptPreviewRequest) => ipcRenderer.invoke('preview-prompt', request),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url)
