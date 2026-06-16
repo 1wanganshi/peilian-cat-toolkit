@@ -35,10 +35,20 @@ jobs:
 
       - name: Normalize asset name
         shell: pwsh
-        run: Copy-Item -LiteralPath "release\陪练猫工具包 Setup 0.1.1.exe" -Destination "release\Setup.0.1.1.exe" -Force
+        run: Copy-Item -LiteralPath "release\陪练猫工具包 Setup 0.1.2.exe" -Destination "release\Setup.0.1.2.exe" -Force
 
-      - name: Upload installer to v0.1.1
+      - name: Create release if missing
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v0.1.1 "release\Setup.0.1.1.exe" --clobber
+        run: |
+          gh release view v0.1.2 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create v0.1.2 --target main --title "陪练猫工具包 v0.1.2" --notes "手机号授权登录、后台授权与使用记录、提示词顶部导航管理。"
+          }
+
+      - name: Upload installer to v0.1.2
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v0.1.2 "release\Setup.0.1.2.exe" --clobber
