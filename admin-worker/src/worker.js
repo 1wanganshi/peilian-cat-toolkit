@@ -1,4 +1,6 @@
 const CONFIG_KEY = 'app:config';
+const CONFIG_BACKUP_LATEST_KEY = 'app:config:backup:latest';
+const CONFIG_BACKUP_PREFIX = 'app:config:backup:';
 const CURRENT_APP_RELEASE = {
   latestVersion: '0.1.6',
   downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.6/Setup.0.1.6.exe',
@@ -143,7 +145,9 @@ export default {
       if (url.pathname === '/api/admin/config' && request.method === 'PUT') {
         assertAdmin(request, env);
         const input = await request.json();
-        const config = publishConfig(input);
+        const existing = await readConfig(env);
+        await backupConfig(env, existing);
+        const config = publishConfig(input, existing);
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true, config });
       }
@@ -228,6 +232,13 @@ async function readConfig(env) {
   return normalizeConfig(saved || DEFAULT_CONFIG);
 }
 
+async function backupConfig(env, config) {
+  const savedAt = new Date().toISOString();
+  const snapshot = JSON.stringify({ savedAt, config }, null, 2);
+  await env.CONFIG.put(CONFIG_BACKUP_LATEST_KEY, snapshot);
+  await env.CONFIG.put(`${CONFIG_BACKUP_PREFIX}${savedAt}`, snapshot);
+}
+
 function normalizeConfig(input) {
   const now = new Date().toISOString();
   const prompts = uniquePromptsByScenario(Array.isArray(input?.prompts) ? input.prompts.map(normalizePrompt).filter(Boolean) : []);
@@ -262,8 +273,18 @@ function normalizeConfig(input) {
   };
 }
 
-function publishConfig(input) {
-  const current = normalizeConfig(input);
+function publishConfig(input, existing = DEFAULT_CONFIG) {
+  const current = normalizeConfig({
+    ...existing,
+    ...input,
+    prompts: Array.isArray(input?.prompts) ? input.prompts : existing.prompts,
+    momentPlans: Array.isArray(input?.momentPlans) ? input.momentPlans : existing.momentPlans,
+    momentPool: Array.isArray(input?.momentPool) ? input.momentPool : existing.momentPool,
+    authorizedUsers: Array.isArray(input?.authorizedUsers) ? input.authorizedUsers : existing.authorizedUsers,
+    usageRecords: Array.isArray(input?.usageRecords) ? input.usageRecords : existing.usageRecords,
+    update: input?.update ? { ...existing.update, ...input.update } : existing.update,
+    meta: input?.meta ? { ...existing.meta, ...input.meta } : existing.meta
+  });
   return {
     ...current,
     meta: {

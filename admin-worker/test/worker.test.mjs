@@ -12,6 +12,9 @@ function createKv(initial = {}) {
     },
     async put(key, value) {
       store.set(key, value);
+    },
+    dump() {
+      return store;
     }
   };
 }
@@ -164,6 +167,93 @@ test('phone authorization controls app login and usage records', async () => {
   assert.equal(config.usageRecords.length, 1);
   assert.equal(config.usageRecords[0].phone, '13800138000');
   assert.equal(config.authorizedUsers[0].lastUsedAt, config.usageRecords[0].createdAt);
+});
+
+test('partial admin config update keeps authorization and usage data', async () => {
+  const existing = {
+    prompts: [],
+    authorizedUsers: [
+      { id: 'u1', phone: '13800138000', name: '测试用户', enabled: true, createdAt: '2026-06-16T00:00:00.000Z', updatedAt: '2026-06-16T00:00:00.000Z' }
+    ],
+    usageRecords: [
+      { id: 'r1', phone: '13800138000', module: 'scripts', action: 'generate-script', summary: '旧记录', createdAt: '2026-06-16T01:00:00.000Z' }
+    ],
+    update: {
+      latestVersion: '0.1.5',
+      downloadUrl: 'https://example.com/old.exe',
+      releaseNotes: 'old',
+      force: false,
+      publishedAt: '2026-06-16T01:00:00.000Z'
+    }
+  };
+  const kv = createKv({ 'app:config': JSON.stringify(existing) });
+  const headers = {
+    'x-admin-username': 'admin',
+    'x-admin-password': '12345678',
+    'content-type': 'application/json'
+  };
+
+  const save = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      update: {
+        latestVersion: '0.1.6',
+        downloadUrl: 'https://example.com/new.exe',
+        releaseNotes: 'new'
+      }
+    })
+  }), {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  });
+  assert.equal(save.status, 200);
+
+  const body = await save.json();
+  assert.equal(body.config.update.latestVersion, '0.1.6');
+  assert.equal(body.config.authorizedUsers.length, 1);
+  assert.equal(body.config.authorizedUsers[0].phone, '13800138000');
+  assert.equal(body.config.usageRecords.length, 1);
+  assert.equal(body.config.usageRecords[0].summary, '旧记录');
+});
+
+test('admin config update stores a recoverable backup before saving', async () => {
+  const kv = createKv({
+    'app:config': JSON.stringify({
+      prompts: [],
+      authorizedUsers: [
+        { id: 'u1', phone: '13800138000', name: 'backup-user', enabled: true }
+      ],
+      update: {
+        latestVersion: '0.1.5',
+        downloadUrl: 'https://example.com/old.exe',
+        releaseNotes: 'old',
+        force: false,
+        publishedAt: '2026-06-16T01:00:00.000Z'
+      }
+    })
+  });
+
+  const save = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers: {
+      'x-admin-username': 'admin',
+      'x-admin-password': '12345678',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ update: { latestVersion: '0.1.6' } })
+  }), {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  });
+  assert.equal(save.status, 200);
+
+  const latestBackup = JSON.parse(kv.dump().get('app:config:backup:latest'));
+  assert.equal(latestBackup.config.authorizedUsers[0].phone, '13800138000');
+  assert.equal(latestBackup.config.update.latestVersion, '0.1.6');
+
+  const timestampedBackupKeys = [...kv.dump().keys()].filter((key) => key.startsWith('app:config:backup:20'));
+  assert.equal(timestampedBackupKeys.length, 1);
 });
 
 test('moment planner page renders standalone calendar manager', async () => {
