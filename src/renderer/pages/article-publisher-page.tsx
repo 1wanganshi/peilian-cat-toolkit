@@ -1,20 +1,34 @@
 import { Button, Card, Image, Input, Space, Tag, message } from 'antd';
 import { CheckCircle2, Copy, Download, Images, Loader2, RefreshCw, Sparkles, Terminal, XCircle } from 'lucide-react';
 import type { JSX } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ArticleGenerationProgress, ArticlePackage } from '../../shared/types';
+import { useEffect, useMemo, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import type { ArticlePackage, HistoryItem } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
 import { ErrorBanner } from '../components/error-banner';
+import { useArticleGenerationStore } from '../stores/article-generation-store';
+
+type HistoryRouteState = {
+  historyItem?: HistoryItem;
+};
 
 export function ArticlePublisherPage(): JSX.Element {
-  const [topic, setTopic] = useState('');
-  const [article, setArticle] = useState<ArticlePackage | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [imageLoadingIndex, setImageLoadingIndex] = useState<number | null>(null);
-  const [error, setError] = useState('');
-  const [progressItems, setProgressItems] = useState<ArticleGenerationProgress[]>([]);
-  const activeRequestIdRef = useRef('');
+  const location = useLocation();
+  const navigate = useNavigate();
   const progressEndRef = useRef<HTMLDivElement | null>(null);
+  const {
+    topic,
+    article,
+    loading,
+    imageLoadingIndex,
+    error,
+    progressItems,
+    setTopic,
+    startGeneration,
+    regenerateImage,
+    regenerateFailedImages,
+    loadArticleFromHistory
+  } = useArticleGenerationStore();
 
   const fullPublishText = useMemo(() => {
     if (!article) return '';
@@ -22,52 +36,20 @@ export function ArticlePublisherPage(): JSX.Element {
   }, [article]);
 
   useEffect(() => {
-    const unsubscribe = window.electron.onArticleGenerationProgress((progress) => {
-      if (progress.requestId !== activeRequestIdRef.current) return;
-      setProgressItems((items) => [...items, progress].slice(-80));
-    });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
     progressEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [progressItems]);
 
-  async function generateArticle(): Promise<void> {
-    if (!topic.trim()) {
-      setError('请输入英语教育相关选题');
-      return;
-    }
+  useEffect(() => {
+    const item = (location.state as HistoryRouteState | null)?.historyItem;
+    if (!item || item.type !== 'article') return;
 
-    setLoading(true);
-    setError('');
-    setArticle(null);
-    const requestId = crypto.randomUUID();
-    activeRequestIdRef.current = requestId;
-    setProgressItems([
-      {
-        requestId,
-        step: '开始',
-        message: `收到选题“${topic.trim()}”，准备生成抖音图文内容`,
-        status: 'running',
-        createdAt: new Date().toISOString()
-      }
-    ]);
-    try {
-      setArticle(await window.electron.generateArticleWithProgress(topic, requestId));
-    } catch (err) {
-      const messageText = err instanceof Error ? err.message : '生成失败，请重试';
-      if (messageText.includes('联网搜索失败')) {
-        setError('联网搜索失败，请检查网络后重试。');
-      } else if (messageText.includes('请输入') || messageText.includes('英语')) {
-        setError(messageText);
-      } else {
-        setError(`AI 生成失败，请重试。${messageText}`);
-      }
-    } finally {
-      setLoading(false);
+    const content = item.content as { result?: ArticlePackage } | undefined;
+    if (content?.result) {
+      loadArticleFromHistory(content.result);
+      message.success('已使用历史图文内容');
+      navigate(location.pathname, { replace: true, state: null });
     }
-  }
+  }, [loadArticleFromHistory, location.pathname, location.state, navigate]);
 
   async function copyText(text: string, label: string): Promise<void> {
     await navigator.clipboard.writeText(text);
@@ -91,41 +73,10 @@ export function ArticlePublisherPage(): JSX.Element {
     message.success(`已导出：${result.filePath}`);
   }
 
-  async function regenerateImage(index: number): Promise<void> {
-    if (!article) return;
-    const card = article.cards[index];
-    setImageLoadingIndex(card.index);
-    setError('');
-    try {
-      const result = await window.electron.regenerateArticleImage(card);
-      setArticle((current) => {
-        if (!current) return current;
-        const images = [...current.images];
-        images[index] = result.image;
-        const failedImages = result.failedImage
-          ? current.failedImages.some((item) => item.index === result.failedImage?.index)
-            ? current.failedImages.map((item) => item.index === result.failedImage?.index ? result.failedImage : item)
-            : [...current.failedImages, result.failedImage]
-          : current.failedImages.filter((item) => item.index !== result.index);
-        return { ...current, images, failedImages };
-      });
-      if (result.failedImage) {
-        setError(`第 ${result.index} 张图片生成失败：${result.failedImage.message}`);
-      } else {
-        message.success(`第 ${result.index} 张图片已重新生成`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `第 ${card.index} 张图片生成失败，请重试`);
-    } finally {
-      setImageLoadingIndex(null);
-    }
-  }
-
-  async function regenerateFailedImages(): Promise<void> {
-    if (!article) return;
-    const failedIndexes = article.failedImages.map((item) => item.index - 1);
-    for (const index of failedIndexes) {
-      await regenerateImage(index);
+  async function handleRegenerateImage(index: number): Promise<void> {
+    const result = await regenerateImage(index);
+    if (result && !result.failedImage) {
+      message.success(`第 ${result.index} 张图片已重新生成`);
     }
   }
 
@@ -138,9 +89,9 @@ export function ArticlePublisherPage(): JSX.Element {
             value={topic}
             placeholder="例如：孩子英语启蒙的5个方法、3-6岁孩子适合听哪些英语故事"
             onChange={(event) => setTopic(event.target.value)}
-            onPressEnter={generateArticle}
+            onPressEnter={startGeneration}
           />
-          <Button type="primary" size="large" loading={loading} icon={<Sparkles size={16} />} onClick={generateArticle}>
+          <Button type="primary" size="large" loading={loading} icon={<Sparkles size={16} />} onClick={startGeneration}>
             生成图文内容
           </Button>
         </Space.Compact>
@@ -183,7 +134,7 @@ export function ArticlePublisherPage(): JSX.Element {
         <EmptyState title="等待生成" description="输入英语启蒙、少儿英语或儿童英语教育相关选题，生成抖音图文卡片和发布文案。" />
       )}
 
-      {!loading && article && (
+      {article && (
         <>
           {article.failedImages.length > 0 && (
             <Card variant="borderless">
@@ -199,7 +150,7 @@ export function ArticlePublisherPage(): JSX.Element {
           <Card
             title="图片预览区"
             variant="borderless"
-            extra={<Button icon={<Images size={16} />} onClick={downloadAllImages}>下载全部图片</Button>}
+            extra={<Button icon={<Images size={16} />} disabled={loading} onClick={downloadAllImages}>下载全部图片</Button>}
           >
             <div className="douyin-card-grid">
               {article.cards.map((card, index) => (
@@ -208,7 +159,7 @@ export function ArticlePublisherPage(): JSX.Element {
                     {article.images[index] ? (
                       <Image src={`data:image/${inferImageType(article.images[index])};base64,${article.images[index]}`} alt={card.title} />
                     ) : (
-                      <EmptyState title="图片失败" description="可重新生成这一张图片。" />
+                      <EmptyState title={loading ? '图片生成中' : '图片失败'} description={loading ? card.title : '可重新生成这一张图片。'} />
                     )}
                   </div>
                   <div className="douyin-card-actions">
@@ -221,7 +172,7 @@ export function ArticlePublisherPage(): JSX.Element {
                       size="small"
                       icon={<RefreshCw size={14} />}
                       loading={imageLoadingIndex === card.index}
-                      onClick={() => regenerateImage(index)}
+                      onClick={() => handleRegenerateImage(index)}
                     >
                       重新生成图片
                     </Button>

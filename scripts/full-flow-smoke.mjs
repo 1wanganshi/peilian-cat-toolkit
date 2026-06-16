@@ -73,82 +73,7 @@ const server = createServer(async (request, response) => {
       }));
       return;
     }
-    if (chatCalls === 1) {
-      response.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify([
-          {
-            title: '少儿钢琴陪练的3个真实方法',
-            heatScore: 9.1,
-            reason: '家长痛点明确，适合短视频表达',
-            references: ['https://example.com/douyin/mock-1']
-          }
-        ]) } }]
-      }));
-      return;
-    }
-    if (chatCalls === 2) {
-      response.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({
-          title: '少儿钢琴陪练的3个真实方法',
-          hook: '孩子练琴总拖拉，先别急着吼。',
-          body: [
-            {
-              scene: 1,
-              duration: '0-3秒',
-              content: '抛出家长痛点。',
-              visual: '家长和孩子在钢琴旁',
-              textOverlay: '别催，先换方法'
-            }
-          ],
-          ending: '收藏起来，下次练琴前看一遍。',
-          keyPhrases: ['先降低阻力，再提高坚持'],
-          hashtags: ['#少儿钢琴', '#陪练']
-        }) } }]
-      }));
-      return;
-    }
-    if (chatCalls === 3) {
-      response.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({
-          type: 'rewrite',
-          sourceText: '今天孩子主动练琴了',
-          style: '日常真实风',
-          results: [
-            { index: 1, text: '今天孩子自己去练琴了，挺意外，也挺开心。' },
-            { index: 2, text: '不用催的一天，孩子自己坐下来练了会儿琴。' },
-            { index: 3, text: '今天的小惊喜：孩子主动练琴了。' }
-          ]
-        }) } }]
-      }));
-      return;
-    }
-    if (chatCalls === 4) {
-      response.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({
-          type: 'generate',
-          idea: '孩子主动练琴',
-          style: '真诚走心',
-          results: [
-            { index: 1, text: '今天孩子主动练琴了，没有催，心里有点小开心。' },
-            { index: 2, text: '有些进步不大声，但看见的时候真的会很欣慰。' },
-            { index: 3, text: '今天值得记一下：孩子自己把琴练了。' }
-          ]
-        }) } }]
-      }));
-      return;
-    }
-    if (chatCalls === 5) {
-      response.end(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({
-          type: 'image',
-          selectedText: '今天孩子主动练琴了，没有催，心里有点小开心。',
-          hasReferenceImage: false,
-          imagePrompt: '真实生活感的家庭练琴场景，柔和自然光，比例 1:1，不要文字 logo 水印'
-        }) } }]
-      }));
-      return;
-    }
-    if (chatCalls === 6) {
+    if (prompt.includes('contentType') && prompt.includes('publishContent')) {
       response.end(JSON.stringify({
         choices: [{ message: { content: JSON.stringify({
           topic: '孩子英语启蒙的5个方法',
@@ -167,6 +92,81 @@ const server = createServer(async (request, response) => {
             body: '这组方法适合家长每天照着做。',
             hashtags: ['#英语启蒙', '#儿童英语', '#少儿英语']
           }
+        }) } }]
+      }));
+      return;
+    }
+    if (chatCalls === 1) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify([
+          {
+            title: '少儿钢琴陪练的3个真实方法',
+            heatScore: 9.1,
+            reason: '家长痛点明确，适合短视频表达',
+            references: ['https://example.com/douyin/mock-1']
+          }
+        ]) } }]
+      }));
+      return;
+    }
+    if (chatCalls === 2) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          type: 'rewrite',
+          sourceText: '今天孩子主动练琴了',
+          style: '日常真实风',
+          results: [
+            { index: 1, text: '今天孩子自己去练琴了，挺意外，也挺开心。' },
+            { index: 2, text: '不用催的一天，孩子自己坐下来练了会儿琴。' },
+            { index: 3, text: '今天的小惊喜：孩子主动练琴了。' }
+          ]
+        }) } }]
+      }));
+      return;
+    }
+    if (chatCalls === 3) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          type: 'generate',
+          idea: '孩子主动练琴',
+          style: '真诚走心',
+          results: [
+            { index: 1, text: '今天孩子主动练琴了，没有催，心里有点小开心。' },
+            { index: 2, text: '有些进步不大声，但看见的时候真的会很欣慰。' },
+            { index: 3, text: '今天值得记一下：孩子自己把琴练了。' }
+          ]
+        }) } }]
+      }));
+      return;
+    }
+    if (chatCalls === 4) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          type: 'image',
+          selectedText: '今天孩子主动练琴了，没有催，心里有点小开心。',
+          hasReferenceImage: false,
+          imagePrompt: '真实生活感的家庭练琴场景，柔和自然光，比例 1:1，不要文字 logo 水印'
+        }) } }]
+      }));
+      return;
+    }
+    if (chatCalls === 5) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          title: '少儿钢琴陪练的3个真实方法',
+          hook: '孩子练琴总拖拉，先别急着吼。',
+          body: [
+            {
+              scene: 1,
+              duration: '0-3秒',
+              content: '抛出家长痛点。',
+              visual: '家长和孩子在钢琴旁',
+              textOverlay: '别催，先换方法'
+            }
+          ],
+          ending: '收藏起来，下次练琴前看一遍。',
+          keyPhrases: ['先降低阻力，再提高坚持'],
+          hashtags: ['#少儿钢琴', '#陪练']
         }) } }]
       }));
       return;
@@ -241,6 +241,7 @@ try {
       ComSpec: process.env.ComSpec ?? 'C:\\Windows\\System32\\cmd.exe',
       PEILIAN_CAT_USER_DATA: userDataDir,
       PEILIAN_MOCK_SEARCH: '1',
+      PEILIAN_ALLOW_MOCK_SEARCH: '1',
       PEILIAN_DISABLE_GPU: '1',
       ELECTRON_RENDERER_URL: ''
     }

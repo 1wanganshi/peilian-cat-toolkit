@@ -5,6 +5,7 @@ import type {
   MomentsGenerateTextResult,
   MomentsImageResult,
   MomentsRewriteResult,
+  TodayMomentSuggestionResult,
   TodayVideoTopic,
   VideoScript,
   VideoTopic
@@ -77,11 +78,17 @@ export class AiService {
   }
 
   async generateScript(topic: VideoTopic | TodayVideoTopic, duration: number, requirements?: string): Promise<VideoScript> {
-    const generated = await this.generateJsonWithLanguageModel<VideoScript>(
-      await this.promptService.buildPrompt('video-script-generate', { topic, duration, requirements })
-    );
-    if (generated) return generated;
+    const prompt = await this.promptService.buildPrompt('video-script-generate', { topic, duration, requirements });
+    const generatedText = await this.generateTextWithLanguageModel(prompt);
+    if (generatedText) {
+      const generated = this.normalizeVideoScriptResponse(generatedText, topic, duration);
+      if (generated) return generated;
+    }
 
+    return this.fallbackVideoScript(topic, duration, requirements);
+  }
+
+  private fallbackVideoScript(topic: VideoTopic | TodayVideoTopic, duration: number, requirements?: string): VideoScript {
     const middleEnd = duration <= 15 ? '11-14秒' : duration <= 30 ? '18-26秒' : '32-54秒';
     return {
       title: topic.title,
@@ -115,6 +122,121 @@ export class AiService {
       keyPhrases: ['先解决方向，再追求技巧', '可执行，比看起来高级更重要'],
       hashtags: ['#短视频脚本', '#内容创作', '#爆款选题']
     };
+  }
+
+  private normalizeVideoScriptResponse(
+    text: string,
+    topic: VideoTopic | TodayVideoTopic,
+    duration: number
+  ): VideoScript | undefined {
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+
+    try {
+      const parsed = JSON.parse(this.extractJson(trimmed)) as unknown;
+      const normalized = this.normalizeVideoScriptObject(parsed, topic, duration);
+      if (normalized) return normalized;
+    } catch {
+      // Some backend prompts intentionally ask the model for a pure transcript.
+    }
+
+    return this.wrapPlainScriptText(trimmed, topic, duration);
+  }
+
+  private normalizeVideoScriptObject(
+    input: unknown,
+    topic: VideoTopic | TodayVideoTopic,
+    duration: number
+  ): VideoScript | undefined {
+    if (!input || typeof input !== 'object') return undefined;
+    const value = input as Record<string, unknown>;
+    const sceneInput = Array.isArray(value.body) ? value.body : this.textValue(value.body) ? [value.body] : [];
+    const body = sceneInput
+      .map((item, index) => this.normalizeScriptScene(item, index))
+      .filter((item): item is VideoScript['body'][number] => Boolean(item));
+    const fallbackText = this.textValue(value.script) || this.textValue(value.content) || this.textValue(value.text);
+
+    if (body.length === 0 && fallbackText) {
+      body.push({
+        scene: 1,
+        duration: `0-${duration}秒`,
+        content: fallbackText,
+        visual: '按逐字稿节奏安排口播画面。',
+        textOverlay: topic.title
+      });
+    }
+
+    if (body.length === 0) return undefined;
+
+    return {
+      title: this.textValue(value.title) || topic.title,
+      hook: this.textValue(value.hook) || body[0]?.content.slice(0, 80) || topic.title,
+      body,
+      ending: this.textValue(value.ending),
+      keyPhrases: this.stringArray(value.keyPhrases),
+      hashtags: this.stringArray(value.hashtags)
+    };
+  }
+
+  private normalizeScriptScene(input: unknown, index: number): VideoScript['body'][number] | undefined {
+    if (typeof input === 'string') {
+      const content = input.trim();
+      if (!content) return undefined;
+      return {
+        scene: index + 1,
+        duration: '',
+        content,
+        visual: '按逐字稿节奏安排口播画面。',
+        textOverlay: ''
+      };
+    }
+
+    if (!input || typeof input !== 'object') return undefined;
+    const value = input as Record<string, unknown>;
+    const content = this.textValue(value.content) || this.textValue(value.text) || this.textValue(value.line);
+    if (!content) return undefined;
+
+    return {
+      scene: Number.isFinite(Number(value.scene)) ? Number(value.scene) : index + 1,
+      duration: this.textValue(value.duration),
+      content,
+      visual: this.textValue(value.visual) || '按逐字稿节奏安排口播画面。',
+      textOverlay: this.textValue(value.textOverlay)
+    };
+  }
+
+  private wrapPlainScriptText(text: string, topic: VideoTopic | TodayVideoTopic, duration: number): VideoScript {
+    const paragraphs = text.split(/\n{2,}/u).map((item) => item.trim()).filter(Boolean);
+    const hook = paragraphs[0] || topic.title;
+    const content = paragraphs.join('\n\n') || text;
+
+    return {
+      title: topic.title,
+      hook,
+      body: [
+        {
+          scene: 1,
+          duration: `0-${duration}秒`,
+          content,
+          visual: '按逐字稿节奏安排口播画面。',
+          textOverlay: hook.slice(0, 28)
+        }
+      ],
+      ending: paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : '',
+      keyPhrases: [],
+      hashtags: []
+    };
+  }
+
+  private textValue(value: unknown): string {
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return '';
+  }
+
+  private stringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => this.textValue(item)).filter(Boolean);
   }
 
   async rewriteMoments(originalText: string, style: string): Promise<MomentsRewriteResult> {
@@ -169,6 +291,18 @@ export class AiService {
     };
   }
 
+  async generateTodayMomentSuggestion(rawContent: string): Promise<Pick<TodayMomentSuggestionResult, 'rewriteContent'>> {
+    const generated = await this.generateJsonWithLanguageModel<{ rewriteContent?: string }>(
+      await this.promptService.buildPrompt('moments-today-suggestion', { rawContent })
+    );
+    const rewriteContent = generated?.rewriteContent?.trim();
+    if (rewriteContent) return { rewriteContent };
+
+    return {
+      rewriteContent: `${rawContent.trim()}\n\n今天就把这段小记录发出来，真实一点，也刚刚好。`
+    };
+  }
+
   async buildMomentImagePrompt(
     selectedText: string,
     hasReferenceImage: boolean
@@ -213,7 +347,11 @@ export class AiService {
     };
   }
 
-  async generateArticle(topic: string, searchResults: HotContent[] = []): Promise<ArticlePackage> {
+  async generateArticle(
+    topic: string,
+    searchResults: HotContent[] = [],
+    options: { requireModelResult?: boolean } = {}
+  ): Promise<ArticlePackage> {
     const searchSummary = this.summarizeSearchResults(searchResults);
     const generated = await this.generateJsonWithLanguageModel<ArticlePackage>(
       await this.promptService.buildPrompt('article-generate', {
@@ -232,6 +370,10 @@ export class AiService {
       };
     }
 
+    if (options.requireModelResult) {
+      throw new Error('AI 没有返回合法的图文 JSON，请检查语言模型配置后重试');
+    }
+
     const contentType = this.inferArticleContentType(topic);
     return {
       topic,
@@ -243,48 +385,48 @@ export class AiService {
           type: 'cover',
           title: topic,
           subtitle: '家长收藏版英语启蒙图文',
-          body: '少走弯路，从每天能做到的小方法开始。',
-          visualPrompt: this.verticalCardPrompt(topic, '封面图，温暖亲子英语启蒙氛围，大标题清晰')
+          body: '先收藏这张清单\n适合 3-8 岁家庭启蒙\n每天 10-15 分钟即可开始\n重点不是背单词，而是可理解输入',
+          visualPrompt: this.verticalCardPrompt(topic, '封面图，含 4 个核心收益点，温暖亲子英语启蒙氛围，大标题清晰')
         },
         {
           index: 2,
           type: 'content',
           title: '先听懂，再开口',
           subtitle: '输入比催孩子说更重要',
-          body: '每天固定 10-15 分钟听英文故事，让孩子先熟悉声音和节奏。',
-          visualPrompt: this.verticalCardPrompt(topic, '家长和孩子一起听英文故事，浅色卡片排版')
+          body: '每天固定 10-15 分钟\n同一本故事连续听 5 天\n先看画面理解意思\n只问 1 个简单问题\n不逼孩子立刻复述',
+          visualPrompt: this.verticalCardPrompt(topic, '家长和孩子一起听英文故事，5 条步骤清单，浅色卡片排版')
         },
         {
           index: 3,
           type: 'content',
           title: '选孩子听得懂的材料',
           subtitle: '难度太高会降低兴趣',
-          body: '绘本、儿歌、动画片段都可以，关键是重复、轻松、有画面。',
-          visualPrompt: this.verticalCardPrompt(topic, '英语绘本和儿童学习场景，信息清晰适合收藏')
+          body: '生词不要超过 20%\n优先选有画面的内容\n句子短、重复多更好\n孩子愿意反复看才算合适\n太难就降一级',
+          visualPrompt: this.verticalCardPrompt(topic, '英语绘本和儿童学习场景，材料选择 checklist，信息清晰适合收藏')
         },
         {
           index: 4,
           type: 'content',
           title: '不要一上来背单词',
           subtitle: '英语启蒙不是考试训练',
-          body: '先建立语感和兴趣，再慢慢加入词汇和表达。',
-          visualPrompt: this.verticalCardPrompt(topic, '避坑提示卡片，亲子教育风，浅色背景')
+          body: '单词会背不等于会用\n孤立记忆容易忘\n先放到故事和场景里\n用动作、图片、实物辅助\n最后再认读单词',
+          visualPrompt: this.verticalCardPrompt(topic, '避坑提示卡片，错误做法和正确做法对比，亲子教育风，浅色背景')
         },
         {
           index: 5,
           type: 'content',
           title: '亲子互动要简单',
           subtitle: '一句英文也能开始',
-          body: 'Good job、Try again、What is this，用生活场景自然重复。',
-          visualPrompt: this.verticalCardPrompt(topic, '家长与孩子日常英语互动，卡片式排版')
+          body: '起床：Wake up\n吃饭：Yummy\n收玩具：Clean up\n鼓励：Good try\n每天固定 3 句就够',
+          visualPrompt: this.verticalCardPrompt(topic, '家长与孩子日常英语互动，生活场景短句表格，卡片式排版')
         },
         {
           index: 6,
           type: 'summary',
           title: '收藏这份启蒙清单',
           subtitle: '每天一点点，坚持更重要',
-          body: '听故事、看绘本、做互动，比一次学很多更有效。',
-          visualPrompt: this.verticalCardPrompt(topic, '总结页，引导收藏，温暖浅色亲子教育风')
+          body: '1. 选听得懂的材料\n2. 同一内容重复 5 天\n3. 每天只互动 3 句\n4. 不急着背单词\n5. 看兴趣和理解，不看速度',
+          visualPrompt: this.verticalCardPrompt(topic, '总结页，5 点收藏清单，引导收藏，温暖浅色亲子教育风')
         }
       ],
       publishContent: {
@@ -304,7 +446,10 @@ export class AiService {
 
     return searchResults
       .slice(0, 8)
-      .map((item) => `${item.platform}: ${item.title}，点赞 ${item.likes}，评论 ${item.comments}`)
+      .map((item) => {
+        const summary = item.summary ? `\n摘要：${item.summary}` : '';
+        return `${item.platform}: ${item.title}${summary}\n链接：${item.url}`;
+      })
       .join('\n');
   }
 
@@ -367,7 +512,7 @@ export class AiService {
   }
 
   private verticalCardPrompt(topic: string, detail: string): string {
-    return `适合抖音图文发布的手机竖屏亲子教育卡片，主题：${topic}。${detail}。浅色背景，温暖亲子教育风，卡片式排版，大标题清晰，信息适合家长收藏，围绕儿童英语、英语启蒙、亲子学习，不要低质、杂乱、文字过多。`;
+    return `适合抖音图文发布的手机竖屏亲子教育干货卡片，主题：${topic}。${detail}。浅色背景，温暖亲子教育风，卡片式排版，大标题清晰，包含 3-5 个结构化信息块、编号步骤、对比表或 checklist，信息密度高且适合家长收藏，围绕儿童英语、英语启蒙、亲子学习，层级清楚，手机上可读，不要低质、杂乱、logo 或水印。`;
   }
 
   private async generateJsonWithLanguageModel<T>(prompt: string): Promise<T | undefined> {

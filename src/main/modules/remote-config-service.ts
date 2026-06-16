@@ -1,4 +1,4 @@
-import type { PromptConfigMeta, PromptTemplate } from '../../shared/types';
+import type { MomentMaterial, MomentPlan, PromptConfigMeta, PromptTemplate, TodayMomentPlansResult } from '../../shared/types';
 import { buildApiUrl } from './api-url';
 
 export interface RemoteUpdateConfig {
@@ -82,6 +82,29 @@ export class RemoteConfigService {
     return config?.meta ?? this.defaultMeta();
   }
 
+  async getTodayMomentPlan(date = this.todayDateString()): Promise<MomentPlan[]> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const url = new URL(buildApiUrl(this.baseUrl(), '/api/moments/plans/today'));
+      url.searchParams.set('date', date);
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: { accept: 'application/json' }
+      });
+      if (response.status === 404) {
+        throw new Error('今天暂未配置朋友圈内容，请联系管理员。');
+      }
+      if (!response.ok) {
+        throw new Error(`读取今日朋友圈规划失败：HTTP ${response.status}`);
+      }
+      return this.normalizeTodayMomentPlans(await response.json(), date);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   isEnabled(): boolean {
     return process.env.PEILIAN_REMOTE_CONFIG_DISABLED !== '1';
   }
@@ -118,5 +141,53 @@ export class RemoteConfigService {
       promptsUpdatedAt: '',
       promptCount: 0
     };
+  }
+
+  private normalizeMomentPlan(input: unknown): MomentPlan {
+    const value = input as Partial<MomentPlan>;
+    const now = new Date().toISOString();
+    return {
+      id: typeof value.id === 'string' ? value.id : '',
+      date: typeof value.date === 'string' ? value.date : this.todayDateString(),
+      rawContent: typeof value.rawContent === 'string' ? value.rawContent : '',
+      materials: Array.isArray(value.materials) ? value.materials.map((item) => this.normalizeMaterial(item)).filter(Boolean) : [],
+      status: value.status === 'draft' || value.status === 'inactive' ? value.status : 'active',
+      remark: typeof value.remark === 'string' ? value.remark : '',
+      createdAt: typeof value.createdAt === 'string' ? value.createdAt : now,
+      updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : now
+    };
+  }
+
+  private normalizeTodayMomentPlans(input: unknown, date: string): MomentPlan[] {
+    const value = input as Partial<TodayMomentPlansResult> | MomentPlan | MomentPlan[];
+    if (Array.isArray(value)) {
+      return value.map((item) => this.normalizeMomentPlan(item)).filter((item) => item.rawContent.trim());
+    }
+    if (Array.isArray((value as Partial<TodayMomentPlansResult>)?.plans)) {
+      return ((value as Partial<TodayMomentPlansResult>).plans ?? [])
+        .map((item) => this.normalizeMomentPlan({ ...item, date: item.date || date }))
+        .filter((item) => item.rawContent.trim());
+    }
+    const single = this.normalizeMomentPlan(value);
+    return single.rawContent.trim() ? [single] : [];
+  }
+
+  private normalizeMaterial(input: unknown): MomentMaterial {
+    const value = input as Partial<MomentMaterial>;
+    const type = value.type === 'video' || value.type === 'file' ? value.type : 'image';
+    return {
+      id: typeof value.id === 'string' ? value.id : crypto.randomUUID(),
+      name: typeof value.name === 'string' ? value.name : '朋友圈素材',
+      type,
+      url: typeof value.url === 'string' ? value.url : ''
+    };
+  }
+
+  private todayDateString(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

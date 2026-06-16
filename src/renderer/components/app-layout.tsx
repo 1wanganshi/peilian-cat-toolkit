@@ -1,22 +1,31 @@
 import type { JSX } from 'react';
-import { FileText, ImagePlus, MessageCircle, ServerCog } from 'lucide-react';
+import { Button } from 'antd';
+import { FileText, History, ImagePlus, LogOut, MessageCircle, ServerCog } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import type { UserAuthSession } from '../../shared/types';
 
 const NAV_ITEMS = [
   { path: '/scripts', label: '短视频脚本', icon: FileText },
   { path: '/moments', label: 'AI 朋友圈', icon: MessageCircle },
   { path: '/articles', label: '图文发布', icon: ImagePlus },
-  { path: '/backend', label: '后端管理', icon: ServerCog }
+  { path: '/history', label: '历史记录', icon: History },
+  { path: '/backend', label: '更新及授权', icon: ServerCog }
 ];
 
 const PAGE_TITLES: Record<string, string> = {
   '/scripts': '短视频脚本生成器',
   '/moments': 'AI 朋友圈',
   '/articles': '图文发布工具',
-  '/backend': '后端管理'
+  '/history': '历史记录',
+  '/backend': '更新及授权'
 };
 
-export function AppLayout(): JSX.Element {
+interface AppLayoutProps {
+  session: UserAuthSession;
+  onLogout: () => void | Promise<void>;
+}
+
+export function AppLayout({ session, onLogout }: AppLayoutProps): JSX.Element {
   const location = useLocation();
 
   return (
@@ -41,6 +50,13 @@ export function AppLayout(): JSX.Element {
             );
           })}
         </nav>
+        <div className="sidebar-session">
+          <span>当前账号</span>
+          <strong>{session.phone}</strong>
+          <Button size="small" icon={<LogOut size={14} />} onClick={onLogout}>
+            退出
+          </Button>
+        </div>
       </aside>
 
       <main className="workspace">

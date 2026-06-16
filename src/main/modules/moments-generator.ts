@@ -1,10 +1,18 @@
-import type { MomentsGenerateTextResult, MomentsImageResult, MomentsRewriteResult } from '../../shared/types';
+import type {
+  MomentPlan,
+  MomentsGenerateTextResult,
+  MomentsImageResult,
+  MomentsRewriteResult,
+  TodayMomentSuggestionResult
+} from '../../shared/types';
 import { AiService } from './ai-service';
 import { ImageService } from './image-service';
+import { RemoteConfigService } from './remote-config-service';
 
 export class MomentsGenerator {
   private readonly aiService = new AiService();
   private readonly imageService = new ImageService();
+  private readonly remoteConfigService = new RemoteConfigService();
 
   async rewriteMoments(originalText: string, style: string): Promise<MomentsRewriteResult> {
     if (!originalText.trim()) {
@@ -62,5 +70,42 @@ export class MomentsGenerator {
     const selectedText = texts.results[0]?.text ?? idea;
     const image = await this.generateImage(selectedText, referenceImage, referenceImageName);
     return { ...image, text: selectedText, image: image.imageUrl };
+  }
+
+  async getTodayPlan(): Promise<MomentPlan[]> {
+    const plans = await this.remoteConfigService.getTodayMomentPlan();
+    if (!plans.some((plan) => plan.rawContent.trim())) {
+      throw new Error('今天暂未配置朋友圈内容，请联系管理员。');
+    }
+    return plans;
+  }
+
+  async generateTodaySuggestion(): Promise<TodayMomentSuggestionResult> {
+    const plans = await this.getTodayPlan();
+    const entries = await Promise.all(plans.map(async (plan) => {
+      const { rewriteContent } = await this.aiService.generateTodayMomentSuggestion(plan.rawContent);
+      return {
+        id: plan.id,
+        rawContent: plan.rawContent,
+        rewriteContent,
+        materials: plan.materials
+      };
+    }));
+    const first = entries[0];
+    return {
+      date: plans[0]?.date ?? this.todayDateString(),
+      rawContent: first?.rawContent ?? '',
+      rewriteContent: first?.rewriteContent ?? '',
+      materials: entries.flatMap((entry) => entry.materials),
+      entries
+    };
+  }
+
+  private todayDateString(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

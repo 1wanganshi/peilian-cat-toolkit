@@ -42,14 +42,16 @@ try {
 
   const rawPrompts = await readFile(resolve(userDataDir, 'prompts.json'), 'utf8');
   const templates = JSON.parse(rawPrompts);
-  assert.ok(
-    templates.some((item) => item.id === 'sync-smoke-moments-generate'),
-    'synced backend prompt not found in local app templates'
-  );
+  const videoScriptPrompt = templates.find((item) => item.scenario === 'video-script-generate');
+  assert.ok(videoScriptPrompt, 'video-script-generate prompt not found in local app templates');
+  assert.equal(videoScriptPrompt.builtIn, false, 'video-script-generate should be loaded from backend');
+  assert.ok(/[\u4e00-\u9fff]/u.test(videoScriptPrompt.template), 'synced video script prompt should contain Chinese text');
+  assert.ok(result.sync.scenarios.includes('video-script-generate'), 'sync result should include video-script-generate');
 
   console.log('prompt sync smoke passed');
   console.log(JSON.stringify({
     imported: result.sync.imported,
+    names: result.sync.names,
     rendererPromptAccess: result.canReadPromptsInRenderer,
     localTemplates: templates.length
   }, null, 2));

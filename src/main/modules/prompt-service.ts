@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import type { PromptConfigMeta, PromptScenario, PromptSyncResult, PromptTemplate } from '../../shared/types';
 import { RemoteConfigService } from './remote-config-service';
 
+const REMOTE_EDITABLE_SCENARIOS = new Set<PromptScenario>(['moments-rewrite', 'video-script-generate']);
+
 const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> = [
   {
     id: 'default-video-today-topics',
@@ -168,6 +170,34 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
 }`
   },
   {
+    id: 'default-moments-today-suggestion',
+    scenario: 'moments-today-suggestion',
+    name: '今日朋友圈建议二创',
+    description: '把后台规划的今日朋友圈原始文案二创成自然真实的朋友圈表达。',
+    requiredVariables: ['rawContent'],
+    enabled: true,
+    builtIn: true,
+    template: `你是一个非常懂微信朋友圈表达的二创助手。
+
+后台配置的今日朋友圈原始文案：
+{{rawContent}}
+
+任务：在保留原文核心意思的前提下，把它改成一条适合今天发朋友圈的文案。
+
+要求：
+1. 保留原文核心信息，不编造关键事实。
+2. 语言自然、有真实感，像普通人自己发的朋友圈。
+3. 不要太像广告，不要营销号腔、官方宣传腔、公众号腔、AI 腔。
+4. 不要输出多个版本，不要输出解释、标题或分析。
+5. 默认 30-160 字，除非原文很短。
+6. 可以有 0-2 个 emoji，不要过多。
+
+只输出合法 JSON：
+{
+  "rewriteContent": "AI 二创后的今日朋友圈文案"
+}`
+  },
+  {
     id: 'default-article-generate',
     scenario: 'article-generate',
     name: 'AI 图文发布生成',
@@ -199,19 +229,20 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
 2. 第 1 张是 cover，标题要有吸引力。
 3. 中间卡片是 content，写具体方法、清单、避坑点、对比内容或推荐内容。
 4. 最后一张是 summary，引导用户收藏。
-5. 每张卡片 body 控制在适合图片展示的简短文字，不要长篇大论。
-6. 每张卡片都要有 visualPrompt，适合生成手机竖屏图文图片。
+5. 每张卡片必须有较高信息密度，让家长觉得“值得收藏”：body 写成 4-6 行，每行短句，包含结论、具体步骤、判断标准、常见误区或可执行动作。
+6. 避免空话，例如“坚持很重要”“多听多说”必须改成具体做法，例如“每天 10 分钟，固定同一本绘本重复 5 天”。
+7. 每张卡片都要有 visualPrompt，适合生成手机竖屏图文图片。
 
 图片风格要求写入 visualPrompt：
 - 适合抖音图文发布
 - 手机竖屏比例
 - 温暖亲子教育风
 - 浅色背景
-- 卡片式排版
-- 大标题清晰
-- 信息适合家长收藏
+- 卡片式排版，像可收藏的干货清单
+- 大标题清晰，正文包含 3-5 个信息块、编号步骤、对比表或 checklist
+- 信息适合家长收藏，密度高但层级清楚
 - 主题围绕儿童英语、英语启蒙、亲子学习
-- 不要低质、杂乱、文字过多
+- 不要低质、杂乱；可以有较多文字，但必须排版清晰、留白合理、手机上可读
 
 只输出合法 JSON，格式严格如下：
 {
@@ -224,7 +255,7 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
       "type": "cover",
       "title": "封面标题",
       "subtitle": "封面副标题",
-      "body": "这一页图片上的简短文字",
+      "body": "这一页图片上的文字，4-6行短句，包含可收藏的信息点",
       "visualPrompt": "用于生成这张图的图片提示词"
     }
   ],
@@ -248,7 +279,7 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
 Title: {{title}}
 Content: {{description}}
 
-Warm parent-child English learning theme. Light background. Clean card layout. Large clear headline. Few concise info blocks. Cute but polished education style. 9:16 vertical, 768x1344. No clutter, no watermark, no logo, not too much text.`
+Warm parent-child English learning theme. Light background. Clean card layout. Large clear headline. Dense but readable save-worthy information card with 3-5 structured text blocks, numbered steps or checklist rows, clear hierarchy, generous margins. 9:16 vertical, 768x1344. No clutter, no watermark, no logo.`
   }
 ];
 
@@ -267,14 +298,33 @@ export class PromptService {
   }
 
   async syncRemoteTemplates(): Promise<PromptSyncResult> {
-    const remoteTemplates = await this.remoteConfigService.listRemotePrompts();
-    const remoteMeta = await this.remoteConfigService.getPromptMeta();
-    const validRemoteTemplates = remoteTemplates.filter((item) => item.enabled && item.scenario && item.template);
+    const remoteConfig = await this.remoteConfigService.getConfig(true);
+    if (!remoteConfig) {
+      throw new Error('无法连接后台提示词配置');
+    }
+    const remoteTemplates = remoteConfig.prompts;
+    const remoteMeta = remoteConfig.meta;
+    const validRemoteTemplates = remoteTemplates.filter((item) =>
+      item.enabled && REMOTE_EDITABLE_SCENARIOS.has(item.scenario) && item.template
+    );
+    const localTemplates = await this.readTemplates();
     if (validRemoteTemplates.length === 0) {
-      throw new Error('后台暂无可用提示词，请先在网页后台保存提示词');
+      const syncedAt = new Date().toISOString();
+      const meta = {
+        promptRevision: remoteMeta.promptRevision,
+        promptsUpdatedAt: remoteMeta.promptsUpdatedAt || syncedAt,
+        promptCount: 0
+      };
+      await this.writeLocalMeta(meta);
+      return {
+        imported: 0,
+        syncedAt,
+        scenarios: [],
+        names: [],
+        ...meta
+      };
     }
 
-    const localTemplates = await this.readTemplates();
     const remoteScenarios = new Set(validRemoteTemplates.map((item) => item.scenario));
     const localFallbacks = localTemplates.filter((item) => !remoteScenarios.has(item.scenario));
     const syncedTemplates = [
@@ -296,8 +346,14 @@ export class PromptService {
     return {
       imported: validRemoteTemplates.length,
       syncedAt,
+      scenarios: validRemoteTemplates.map((item) => item.scenario),
+      names: validRemoteTemplates.map((item) => item.name),
       ...meta
     };
+  }
+
+  async refreshRemoteEditableTemplates(): Promise<void> {
+    await this.syncRemoteTemplates();
   }
 
   async getPromptConfigMeta(): Promise<PromptConfigMeta> {
@@ -313,6 +369,14 @@ export class PromptService {
   }
 
   async buildPrompt(scenario: PromptScenario, variables: Record<string, unknown>): Promise<string> {
+    if (REMOTE_EDITABLE_SCENARIOS.has(scenario)) {
+      try {
+        await this.syncRemoteTemplates();
+      } catch {
+        // Keep generation usable when the backend is temporarily unavailable.
+      }
+    }
+
     const templates = await this.listTemplates();
     const template = templates.find((item) => item.scenario === scenario && item.enabled) ??
       templates.find((item) => item.scenario === scenario);
@@ -325,9 +389,18 @@ export class PromptService {
   }
 
   private renderTemplate(template: string, variables: Record<string, unknown>): string {
-    return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/gu, (_match, name: string) =>
-      this.text(variables[name])
-    );
+    const renderedVariables = new Set<string>();
+    const rendered = template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/gu, (_match, name: string) => {
+      renderedVariables.add(name);
+      return this.text(variables[name]);
+    });
+    const missingVariables = Object.entries(variables)
+      .filter(([name, value]) => !renderedVariables.has(name) && this.text(value))
+      .map(([name, value]) => `${name}: ${this.text(value)}`);
+
+    if (missingVariables.length === 0) return rendered;
+
+    return `${rendered}\n\n---\nAPP input, must be used:\n${missingVariables.join('\n')}`;
   }
 
   private async readTemplates(): Promise<PromptTemplate[]> {

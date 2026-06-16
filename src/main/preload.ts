@@ -6,6 +6,7 @@ import type {
   GenerateMomentsRequest,
   GenerateMomentImageRequest,
   GenerateScriptRequest,
+  HistoryQuery,
   ModelConfigInput,
   VideoScript
 } from '../shared/types';
@@ -22,6 +23,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('generate-moment-image', data),
   generateMomentsWithImage: (data: GenerateMomentsRequest) =>
     ipcRenderer.invoke('generate-moments-with-image', data),
+  getTodayMomentPlan: () => ipcRenderer.invoke('get-today-moment-plan'),
+  generateTodayMomentSuggestion: () => ipcRenderer.invoke('generate-today-moment-suggestion'),
   downloadImage: (base64Image: string, fileName?: string) =>
     ipcRenderer.invoke('download-image', base64Image, fileName),
   generateArticle: (topic: string) => ipcRenderer.invoke('generate-article', topic),
@@ -43,5 +46,12 @@ contextBridge.exposeInMainWorld('electron', {
   getPromptConfigMeta: () => ipcRenderer.invoke('get-prompt-config-meta'),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url)
+  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
+  getAuthSession: () => ipcRenderer.invoke('get-auth-session'),
+  loginWithPhone: (phone: string) => ipcRenderer.invoke('login-with-phone', phone),
+  logoutAuthSession: () => ipcRenderer.invoke('logout-auth-session'),
+  listHistory: (query?: HistoryQuery) => ipcRenderer.invoke('list-history', query),
+  deleteHistory: (id: string) => ipcRenderer.invoke('delete-history', id),
+  clearHistory: () => ipcRenderer.invoke('clear-history'),
+  copyImageToClipboard: (base64Image: string) => ipcRenderer.invoke('copy-image-to-clipboard', base64Image)
 });

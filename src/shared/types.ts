@@ -3,6 +3,7 @@ export type Platform = 'douyin' | 'xiaohongshu' | 'bilibili' | 'zhihu' | 'wechat
 export interface HotContent {
   platform: Platform;
   title: string;
+  summary?: string;
   views: number;
   likes: number;
   comments: number;
@@ -67,6 +68,48 @@ export interface MomentsImageResult {
   imageUrl: string;
 }
 
+export type MomentMaterialType = 'image' | 'video' | 'file';
+
+export type MomentPlanStatus = 'draft' | 'active' | 'inactive';
+
+export interface MomentMaterial {
+  id: string;
+  name: string;
+  type: MomentMaterialType;
+  url: string;
+}
+
+export interface MomentPlan {
+  id: string;
+  date: string;
+  rawContent: string;
+  materials: MomentMaterial[];
+  status: MomentPlanStatus;
+  remark: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TodayMomentPlansResult {
+  date: string;
+  plans: MomentPlan[];
+}
+
+export interface TodayMomentSuggestionItem {
+  id: string;
+  rawContent: string;
+  rewriteContent: string;
+  materials: MomentMaterial[];
+}
+
+export interface TodayMomentSuggestionResult {
+  date: string;
+  rawContent: string;
+  rewriteContent: string;
+  materials: MomentMaterial[];
+  entries: TodayMomentSuggestionItem[];
+}
+
 export type ArticleContentType = 'list' | 'tips' | 'mistakes' | 'comparison' | 'recommendation';
 
 export type ArticleCardType = 'cover' | 'content' | 'summary';
@@ -105,6 +148,10 @@ export interface ArticleGenerationProgress {
   message: string;
   status: ArticleGenerationProgressStatus;
   detail?: string;
+  data?: {
+    article?: ArticlePackage;
+    imageResult?: ArticleImageResult;
+  };
   createdAt: string;
 }
 
@@ -194,6 +241,7 @@ export type PromptScenario =
   | 'video-script-generate'
   | 'moments-rewrite'
   | 'moments-generate'
+  | 'moments-today-suggestion'
   | 'article-generate'
   | 'image-generate';
 
@@ -247,6 +295,70 @@ export interface PromptSyncResult {
   promptRevision: number;
   promptsUpdatedAt: string;
   promptCount: number;
+  scenarios: PromptScenario[];
+  names: string[];
+}
+
+export interface UserAuthSession {
+  phone: string;
+  authorized: boolean;
+  checkedAt: string;
+  message?: string;
+}
+
+export interface UserLoginResult extends UserAuthSession {
+  user?: AuthorizedUser;
+}
+
+export interface AuthorizedUser {
+  id: string;
+  phone: string;
+  name?: string;
+  enabled: boolean;
+  remark?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt?: string;
+  lastUsedAt?: string;
+}
+
+export interface UsageRecord {
+  id: string;
+  phone: string;
+  module: string;
+  action: string;
+  summary: string;
+  createdAt: string;
+}
+
+export type HistoryItemType =
+  | 'script'
+  | 'moments'
+  | 'moment-image'
+  | 'today-moment'
+  | 'article'
+  | 'article-image';
+
+export interface HistoryItem {
+  id: string;
+  type: HistoryItemType;
+  title: string;
+  summary: string;
+  content: unknown;
+  createdAt: string;
+}
+
+export interface HistoryCreateInput {
+  type: HistoryItemType;
+  title: string;
+  summary?: string;
+  content: unknown;
+}
+
+export interface HistoryQuery {
+  type?: HistoryItemType | 'all';
+  keyword?: string;
+  limit?: number;
 }
 
 export type ElectronApi = {
@@ -258,6 +370,8 @@ export type ElectronApi = {
   generateMomentTexts: (data: GenerateMomentsRequest) => Promise<MomentsGenerateTextResult>;
   generateMomentImage: (data: GenerateMomentImageRequest) => Promise<MomentsImageResult>;
   generateMomentsWithImage: (data: GenerateMomentsRequest) => Promise<MomentsImageResult & { text: string; image: string }>;
+  getTodayMomentPlan: () => Promise<MomentPlan[]>;
+  generateTodayMomentSuggestion: () => Promise<TodayMomentSuggestionResult>;
   downloadImage: (base64Image: string, fileName?: string) => Promise<ExportResult>;
   generateArticle: (topic: string) => Promise<ArticlePackage>;
   generateArticleWithProgress: (topic: string, requestId: string) => Promise<ArticlePackage>;
@@ -273,4 +387,11 @@ export type ElectronApi = {
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
   openExternalUrl: (url: string) => Promise<void>;
+  getAuthSession: () => Promise<UserAuthSession | undefined>;
+  loginWithPhone: (phone: string) => Promise<UserLoginResult>;
+  logoutAuthSession: () => Promise<void>;
+  listHistory: (query?: HistoryQuery) => Promise<HistoryItem[]>;
+  deleteHistory: (id: string) => Promise<void>;
+  clearHistory: () => Promise<void>;
+  copyImageToClipboard: (base64Image: string) => Promise<void>;
 };

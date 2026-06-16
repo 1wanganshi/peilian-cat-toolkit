@@ -4,6 +4,7 @@ admin-worker/.wrangler/
 out/
 dist/
 release/
+.codex-run/
 .env
 .env.local
 *.log

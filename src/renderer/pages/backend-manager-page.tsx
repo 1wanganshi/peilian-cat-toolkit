@@ -116,6 +116,7 @@ function BackendPromptSyncPanel(): JSX.Element {
   const [lastSync, setLastSync] = useState<string | undefined>();
   const [lastRevision, setLastRevision] = useState<number | undefined>();
   const [imported, setImported] = useState<number | undefined>();
+  const [syncedNames, setSyncedNames] = useState<string[]>([]);
   const [meta, setMeta] = useState<PromptConfigMeta | undefined>();
 
   useEffect(() => {
@@ -146,7 +147,8 @@ function BackendPromptSyncPanel(): JSX.Element {
       });
       localStorage.setItem('peilian-prompt-last-sync', result.syncedAt);
       localStorage.setItem('peilian-prompt-last-revision', String(result.promptRevision));
-      message.success(`已从后台更新 ${result.imported} 个提示词`);
+      setSyncedNames(result.names);
+      message.success(result.names.length ? `已同步：${result.names.join('、')}` : `已从后台更新 ${result.imported} 个提示词`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '更新提示词失败，请稍后重试');
     } finally {
@@ -202,6 +204,14 @@ function BackendPromptSyncPanel(): JSX.Element {
             <CheckCircle2 size={18} />
             <span>提示词正文只在网页后台维护；这里不展示内容，只负责检查和更新。</span>
           </div>
+          {syncedNames.length > 0 && (
+            <div className="prompt-synced-list">
+              <span>已同步到前台 APP：</span>
+              {syncedNames.map((name) => (
+                <Tag color="green" key={name}>{name}</Tag>
+              ))}
+            </div>
+          )}
           <Space wrap>
             <Button type="primary" icon={<DownloadCloud size={16} />} loading={syncing} onClick={syncPrompts}>
               更新提示词
