@@ -1,17 +1,19 @@
 const CONFIG_KEY = 'app:config';
+const CURRENT_APP_RELEASE = {
+  latestVersion: '0.1.6',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.6/Setup.0.1.6.exe',
+  releaseNotes: '新增 APP 端检查更新和立刻更新按钮；立刻更新会在软件内下载安装包并打开安装程序，不再跳转网页。',
+  force: false,
+  publishedAt: '2026-06-16T11:51:49.674Z'
+};
 
 const DEFAULT_CONFIG = {
   prompts: [],
   momentPlans: [],
+  momentPool: [],
   authorizedUsers: [],
   usageRecords: [],
-  update: {
-    latestVersion: '0.1.5',
-    downloadUrl: '',
-    releaseNotes: '新增短视频脚本今日选题能力，并优化后台提示词更新流程。',
-    force: false,
-    publishedAt: '2026-06-16T00:00:00.000Z'
-  },
+  update: CURRENT_APP_RELEASE,
   meta: {
     promptRevision: 0,
     promptsUpdatedAt: '2026-06-15T00:00:00.000Z',
@@ -204,6 +206,16 @@ export default {
         return jsonResponse({ material: await parseUploadedMaterial(request) });
       }
 
+      if (url.pathname === '/api/admin/moments/pool' && request.method === 'PUT') {
+        assertAdmin(request, env);
+        const input = await request.json();
+        const config = await readConfig(env);
+        const poolInput = Array.isArray(input?.momentPool) ? input.momentPool : Array.isArray(input?.items) ? input.items : [];
+        config.momentPool = poolInput.map(normalizeMomentPoolItem).filter(Boolean);
+        await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
+        return jsonResponse({ ok: true, momentPool: config.momentPool, config });
+      }
+
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (error) {
       return jsonResponse({ error: error?.message || 'Server error' }, error?.status || 500);
@@ -221,20 +233,27 @@ function normalizeConfig(input) {
   const prompts = uniquePromptsByScenario(Array.isArray(input?.prompts) ? input.prompts.map(normalizePrompt).filter(Boolean) : []);
   const meta = normalizeMeta(input?.meta);
   const momentPlans = Array.isArray(input?.momentPlans) ? input.momentPlans.map(normalizeMomentPlan).filter(Boolean) : [];
+  const momentPool = Array.isArray(input?.momentPool) ? input.momentPool.map(normalizeMomentPoolItem).filter(Boolean) : [];
   const authorizedUsers = Array.isArray(input?.authorizedUsers) ? input.authorizedUsers.map(normalizeAuthorizedUser).filter(Boolean) : [];
   const usageRecords = Array.isArray(input?.usageRecords) ? input.usageRecords.map(normalizeUsageRecord).filter(Boolean) : [];
+  const savedUpdate = {
+    latestVersion: text(input?.update?.latestVersion) || DEFAULT_CONFIG.update.latestVersion,
+    downloadUrl: text(input?.update?.downloadUrl),
+    releaseNotes: text(input?.update?.releaseNotes),
+    force: Boolean(input?.update?.force),
+    publishedAt: text(input?.update?.publishedAt) || now
+  };
+  const update = compareVersions(savedUpdate.latestVersion, CURRENT_APP_RELEASE.latestVersion) < 0
+    ? { ...CURRENT_APP_RELEASE, force: savedUpdate.force || CURRENT_APP_RELEASE.force }
+    : savedUpdate;
+
   return {
     prompts,
     momentPlans,
+    momentPool,
     authorizedUsers,
     usageRecords,
-    update: {
-      latestVersion: text(input?.update?.latestVersion) || DEFAULT_CONFIG.update.latestVersion,
-      downloadUrl: text(input?.update?.downloadUrl),
-      releaseNotes: text(input?.update?.releaseNotes),
-      force: Boolean(input?.update?.force),
-      publishedAt: text(input?.update?.publishedAt) || now
-    },
+    update,
     meta: {
       promptRevision: meta.promptRevision,
       promptsUpdatedAt: meta.promptsUpdatedAt || now,
@@ -363,6 +382,22 @@ function normalizeMomentPlan(input) {
   };
 }
 
+function normalizeMomentPoolItem(input) {
+  const rawContent = typeof input?.rawContent === 'string' ? input.rawContent.trim() : '';
+  const materials = Array.isArray(input?.materials) ? input.materials.map(normalizeMomentMaterial).filter((item) => item.url) : [];
+  const remark = text(input?.remark);
+  if (!rawContent && !materials.length && !remark) return undefined;
+  const now = new Date().toISOString();
+  return {
+    id: text(input?.id) || crypto.randomUUID(),
+    rawContent,
+    materials,
+    remark,
+    createdAt: text(input?.createdAt) || now,
+    updatedAt: text(input?.updatedAt) || now
+  };
+}
+
 function normalizeMomentMaterial(input) {
   const type = normalizeMaterialType(input?.type);
   return {
@@ -389,8 +424,9 @@ function validateMomentPlan(plan) {
     error.status = 400;
     throw error;
   }
-  if (!plan.rawContent) {
-    const error = new Error('原始文案不能为空');
+  const hasMaterial = Array.isArray(plan.materials) && plan.materials.some((material) => material.url);
+  if (!plan.rawContent && !hasMaterial) {
+    const error = new Error('朋友圈文字和素材不能同时为空');
     error.status = 400;
     throw error;
   }
@@ -564,7 +600,7 @@ function renderMomentPlannerHtml(publicBaseUrl) {
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .toolbar { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: flex; justify-content: space-between; gap: 14px; align-items: center; flex-wrap: wrap; }
     .status { color: #2e7869; font-weight: 800; min-height: 24px; }
-    .planner { display: grid; grid-template-columns: minmax(330px, 420px) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .planner { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(320px, 420px); gap: 18px; align-items: start; }
     .panel { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: grid; gap: 14px; }
     .calendar-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .weekday-grid, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
@@ -581,9 +617,17 @@ function renderMomentPlannerHtml(publicBaseUrl) {
     .grid2 { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; }
     .material-list { display: grid; gap: 10px; }
     .material-row { display: grid; grid-template-columns: 120px 120px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-    .upload-inline input { display: none; }
+    .hidden-file-input { display: none; }
+    .drop-zone { border: 1px dashed #b9c8bf; border-radius: 8px; background: #f5fbf7; padding: 14px; color: #2e7869; text-align: center; cursor: pointer; }
+    .drop-zone.drag-over, .entry-card.drag-over { border-color: #2e7869; background: #eef9f3; }
+    .pool-panel { max-height: calc(100vh - 190px); overflow: auto; }
+    .pool-list { display: grid; gap: 10px; }
+    .pool-card { border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 10px; }
+    .pool-card textarea { min-height: 74px; }
+    .pool-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .pool-meta { color: #68726f; font-size: 12px; }
     .empty { border: 1px dashed #c9d7cd; border-radius: 8px; padding: 18px; color: #68726f; background: #f9fbf7; }
-    @media (max-width: 980px) { .planner, .grid2, .material-row { grid-template-columns: 1fr; } .day { min-height: 62px; } }
+    @media (max-width: 1180px) { .planner, .grid2, .material-row { grid-template-columns: 1fr; } .day { min-height: 62px; } }
   </style>
 </head>
 <body>
@@ -630,10 +674,22 @@ function renderMomentPlannerHtml(publicBaseUrl) {
         </div>
         <div class="entry-list" id="entryList"></div>
       </section>
+      <aside class="panel pool-panel">
+        <div class="entry-head">
+          <div>
+            <h2>朋友圈池</h2>
+            <div class="muted">上传的新内容会先进入池子；选中日期后，可把池子内容加入当天。</div>
+          </div>
+          <button id="addPoolItem">新增池内容</button>
+        </div>
+        <div class="drop-zone" id="poolDropZone">拖拽素材到这里，会保存到朋友圈池</div>
+        <input class="hidden-file-input" id="poolUpload" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
+        <div class="pool-list" id="poolList"></div>
+      </aside>
     </div>
   </main>
   <script>
-    let state = { prompts: [], momentPlans: [], update: {}, meta: { promptRevision: 0, promptsUpdatedAt: '', promptCount: 0 } };
+    let state = { prompts: [], momentPlans: [], momentPool: [], update: {}, meta: { promptRevision: 0, promptsUpdatedAt: '', promptCount: 0 } };
     const today = new Date();
     let monthCursor = new Date(today.getFullYear(), today.getMonth(), 1);
     let selectedDate = toDateString(today);
@@ -655,15 +711,19 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       if (!res.ok) throw new Error(await res.text());
       state = await res.json();
       state.momentPlans = Array.isArray(state.momentPlans) ? state.momentPlans : [];
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
       renderAll();
       setStatus("后台数据已读取");
     }
+    function hasMomentContent(item) {
+      return Boolean(String(item.rawContent || "").trim()) || (Array.isArray(item.materials) && item.materials.some((material) => String(material.url || "").trim()));
+    }
     async function saveConfig() {
-      const invalid = state.momentPlans.find((item) => !String(item.date || "").trim() || !String(item.rawContent || "").trim());
+      const invalid = state.momentPlans.find((item) => !String(item.date || "").trim() || !hasMomentContent(item));
       if (invalid) {
         selectedDate = invalid.date || selectedDate;
         renderAll();
-        setStatus("还有朋友圈文案为空，请补完后再保存", true);
+        setStatus("还有朋友圈内容为空，请补充文字或素材后再保存", true);
         return;
       }
       const res = await fetch(api + "/api/admin/config", {
@@ -675,6 +735,7 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       const body = await res.json();
       state = body.config;
       state.momentPlans = Array.isArray(state.momentPlans) ? state.momentPlans : [];
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
       renderAll();
       setStatus("保存成功");
     }
@@ -682,6 +743,7 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       $("selectedTitle").textContent = selectedDate + " 朋友圈规划";
       renderCalendar();
       renderEntries();
+      renderPool();
     }
     function renderCalendar() {
       const y = monthCursor.getFullYear();
@@ -720,7 +782,8 @@ function renderMomentPlannerHtml(publicBaseUrl) {
         '<div class="entry-head"><h3>第 ' + (index + 1) + ' 条朋友圈</h3><div class="row"><button class="secondary" data-duplicate-plan="' + escapeAttr(item.id) + '">复制一条</button><button class="danger" data-delete-plan="' + escapeAttr(item.id) + '">删除</button></div></div>' +
         '<div class="grid2"><label>状态<select data-plan-status="' + escapeAttr(item.id) + '"><option value="active"' + (item.status === "active" ? " selected" : "") + '>启用</option><option value="draft"' + (item.status === "draft" ? " selected" : "") + '>草稿</option><option value="inactive"' + (item.status === "inactive" ? " selected" : "") + '>停用</option></select></label><label>备注<input data-plan-remark="' + escapeAttr(item.id) + '" value="' + escapeAttr(item.remark || "") + '" placeholder="内部备注，可不填" /></label></div>' +
         '<label>朋友圈文字<textarea data-plan-raw="' + escapeAttr(item.id) + '" placeholder="输入这条朋友圈的原始内容，APP 会在用户点击时实时改写">' + escapeHtml(item.rawContent || "") + '</textarea></label>' +
-        '<div class="entry-head"><strong>素材</strong><div class="row"><button class="secondary" data-add-material="' + escapeAttr(item.id) + '">添加素材链接</button><label class="upload-inline"><button class="secondary" type="button">上传素材</button><input type="file" multiple data-upload-material="' + escapeAttr(item.id) + '" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></label></div></div>' +
+        '<div class="entry-head"><strong>素材</strong><div class="row"><button class="secondary" data-add-material="' + escapeAttr(item.id) + '">添加素材链接</button><button class="secondary" type="button" data-pick-upload="' + escapeAttr(item.id) + '">上传到本条</button><button class="secondary" type="button" data-open-pool="' + escapeAttr(item.id) + '">从池子选择</button><input class="hidden-file-input" type="file" multiple data-upload-material="' + escapeAttr(item.id) + '" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></div></div>' +
+        '<div class="drop-zone" data-drop-material="' + escapeAttr(item.id) + '">拖拽素材到这里会自动上传并保存，也可以点击选择文件</div>' +
         '<div class="material-list">' + (materials.length ? materials.map((material, materialIndex) => renderMaterial(item.id, material, materialIndex)).join("") : '<div class="empty">这条朋友圈还没有素材。</div>') + '</div>' +
       '</article>';
     }
@@ -750,6 +813,60 @@ function renderMomentPlannerHtml(publicBaseUrl) {
     function findPlan(id) {
       return state.momentPlans.find((item) => item.id === id);
     }
+    function findPoolItem(id) {
+      return state.momentPool.find((item) => item.id === id);
+    }
+    function createPoolItem(input) {
+      const now = new Date().toISOString();
+      return {
+        id: crypto.randomUUID(),
+        rawContent: input?.rawContent || "",
+        materials: Array.isArray(input?.materials) ? input.materials : [],
+        remark: input?.remark || "",
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+    function poolItemToPlan(poolItem) {
+      const now = new Date().toISOString();
+      return {
+        id: crypto.randomUUID(),
+        date: selectedDate,
+        rawContent: poolItem.rawContent || "",
+        materials: (poolItem.materials || []).map((material) => ({ ...material, id: crypto.randomUUID() })),
+        status: "active",
+        remark: poolItem.remark || "",
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+    function renderPool() {
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+      if (!state.momentPool.length) {
+        $("poolList").innerHTML = '<div class="empty">朋友圈池还没有内容。可以点击新增，也可以直接拖拽素材到池子。</div>';
+        return;
+      }
+      $("poolList").innerHTML = state.momentPool.map((item, index) => renderPoolItem(item, index)).join("");
+    }
+    function renderPoolItem(item, index) {
+      const materials = Array.isArray(item.materials) ? item.materials : [];
+      return '<article class="pool-card" data-pool-card="' + escapeAttr(item.id) + '">' +
+        '<div class="pool-card-head"><strong>池内容 ' + (index + 1) + '</strong><span class="pool-meta">素材 ' + materials.length + ' 个</span></div>' +
+        '<label>朋友圈文字<textarea data-pool-raw="' + escapeAttr(item.id) + '" placeholder="可只放素材，也可写朋友圈文字">' + escapeHtml(item.rawContent || "") + '</textarea></label>' +
+        '<label>备注<input data-pool-remark="' + escapeAttr(item.id) + '" value="' + escapeAttr(item.remark || "") + '" placeholder="内部备注，可不填" /></label>' +
+        '<div class="row"><button type="button" data-use-pool="' + escapeAttr(item.id) + '">加入当天</button><button class="secondary" type="button" data-pick-pool-upload="' + escapeAttr(item.id) + '">上传素材</button><button class="danger" type="button" data-delete-pool="' + escapeAttr(item.id) + '">删除</button><input class="hidden-file-input" type="file" multiple data-upload-pool="' + escapeAttr(item.id) + '" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></div>' +
+        '<div class="drop-zone" data-drop-pool="' + escapeAttr(item.id) + '">拖拽素材到这条池内容</div>' +
+        '<div class="material-list">' + (materials.length ? materials.map((material, materialIndex) => renderPoolMaterial(item.id, material, materialIndex)).join("") : '<div class="empty">还没有素材。</div>') + '</div>' +
+      '</article>';
+    }
+    function renderPoolMaterial(poolId, material, index) {
+      return '<div class="material-row">' +
+        '<input data-pool-material-name="' + escapeAttr(poolId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.name || "") + '" placeholder="素材名称" />' +
+        '<select data-pool-material-type="' + escapeAttr(poolId) + '" data-material-index="' + index + '"><option value="image"' + (material.type === "image" ? " selected" : "") + '>图片</option><option value="video"' + (material.type === "video" ? " selected" : "") + '>视频</option><option value="file"' + (material.type === "file" ? " selected" : "") + '>文件</option></select>' +
+        '<input data-pool-material-url="' + escapeAttr(poolId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.url || "") + '" placeholder="https:// 或 data:" />' +
+        '<button class="danger" data-remove-pool-material="' + escapeAttr(poolId) + '" data-material-index="' + index + '">删除</button>' +
+      '</div>';
+    }
     async function uploadMaterial(file) {
       const form = new FormData();
       form.append("file", file);
@@ -757,6 +874,63 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       if (!res.ok) throw new Error(await res.text());
       const body = await res.json();
       return body.material;
+    }
+    function uploadInputForPlan(planId) {
+      return Array.from(document.querySelectorAll("[data-upload-material]")).find((input) => input.dataset.uploadMaterial === planId);
+    }
+    function uploadInputForPool(poolId) {
+      return Array.from(document.querySelectorAll("[data-upload-pool]")).find((input) => input.dataset.uploadPool === poolId);
+    }
+    async function savePoolConfig() {
+      const res = await fetch(api + "/api/admin/moments/pool", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ momentPool: state.momentPool })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = await res.json();
+      state.momentPool = Array.isArray(body.momentPool) ? body.momentPool : [];
+      renderPool();
+      setStatus("朋友圈池已保存");
+    }
+    async function uploadFilesToPlan(planId, files, autoSave) {
+      const plan = findPlan(planId);
+      if (!plan) return;
+      const fileList = Array.from(files || []);
+      if (!fileList.length) return;
+      setStatus("正在上传素材...");
+      try {
+        plan.materials = Array.isArray(plan.materials) ? plan.materials : [];
+        for (const file of fileList) plan.materials.push(await uploadMaterial(file));
+        plan.updatedAt = new Date().toISOString();
+        renderAll();
+        if (autoSave) {
+          await saveConfig();
+        } else {
+          setStatus("素材已上传，点保存后生效");
+        }
+      } catch (error) {
+        setStatus("素材上传失败：" + error.message, true);
+      }
+    }
+    async function uploadFilesToPool(poolId, files) {
+      const fileList = Array.from(files || []);
+      if (!fileList.length) return;
+      setStatus("正在上传到朋友圈池...");
+      try {
+        state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+        let poolItem = poolId ? findPoolItem(poolId) : undefined;
+        if (!poolItem) {
+          poolItem = createPoolItem({});
+          state.momentPool.unshift(poolItem);
+        }
+        poolItem.materials = Array.isArray(poolItem.materials) ? poolItem.materials : [];
+        for (const file of fileList) poolItem.materials.push(await uploadMaterial(file));
+        poolItem.updatedAt = new Date().toISOString();
+        await savePoolConfig();
+      } catch (error) {
+        setStatus("朋友圈池上传失败：" + error.message, true);
+      }
     }
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
@@ -768,6 +942,17 @@ function renderMomentPlannerHtml(publicBaseUrl) {
     $("reload").onclick = () => loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
     $("save").onclick = () => saveConfig().catch((error) => setStatus("保存失败：" + error.message, true));
     $("addEntry").onclick = addEntry;
+    $("addPoolItem").onclick = () => {
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+      state.momentPool.unshift(createPoolItem({}));
+      renderPool();
+      setStatus("已新增一条池内容，填写文字或上传素材后会保存");
+    };
+    $("poolDropZone").onclick = () => $("poolUpload").click();
+    $("poolUpload").onchange = async (event) => {
+      await uploadFilesToPool("", event.target.files);
+      event.target.value = "";
+    };
     $("activateAll").onclick = () => {
       for (const item of entriesForDate(selectedDate)) item.status = "active";
       renderAll();
@@ -783,6 +968,26 @@ function renderMomentPlannerHtml(publicBaseUrl) {
     };
     document.body.addEventListener("click", (event) => {
       const target = event.target;
+      const pickUpload = target.closest("[data-pick-upload]");
+      const dropPicker = target.closest("[data-drop-material]");
+      if (pickUpload || dropPicker) {
+        const planId = (pickUpload || dropPicker).dataset.pickUpload || (pickUpload || dropPicker).dataset.dropMaterial;
+        const input = uploadInputForPlan(planId);
+        if (input) input.click();
+        return;
+      }
+      const pickPoolUpload = target.closest("[data-pick-pool-upload]");
+      if (pickPoolUpload) {
+        const input = uploadInputForPool(pickPoolUpload.dataset.pickPoolUpload);
+        if (input) input.click();
+        return;
+      }
+      const openPool = target.closest("[data-open-pool]");
+      if (openPool) {
+        document.querySelector(".pool-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setStatus("在朋友圈池点击“加入当天”，会加入 " + selectedDate);
+        return;
+      }
       const date = target.closest("[data-date]")?.dataset.date;
       if (date) {
         selectedDate = date;
@@ -822,6 +1027,34 @@ function renderMomentPlannerHtml(publicBaseUrl) {
         renderAll();
         setStatus("已复制一条，点保存后生效");
       }
+      const usePoolId = target.dataset.usePool;
+      if (usePoolId) {
+        const poolItem = findPoolItem(usePoolId);
+        if (!poolItem) return;
+        if (!hasMomentContent(poolItem)) {
+          setStatus("这条池内容还没有文字或素材，先补充后再加入当天", true);
+          return;
+        }
+        state.momentPlans.push(poolItemToPlan(poolItem));
+        renderAll();
+        saveConfig().catch((error) => setStatus("加入当天失败：" + error.message, true));
+      }
+      const deletePoolId = target.dataset.deletePool;
+      if (deletePoolId) {
+        if (!confirm("删除这条朋友圈池内容？")) return;
+        state.momentPool = (state.momentPool || []).filter((item) => item.id !== deletePoolId);
+        renderPool();
+        savePoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
+      const removePoolMaterialId = target.dataset.removePoolMaterial;
+      if (removePoolMaterialId) {
+        const item = findPoolItem(removePoolMaterialId);
+        if (!item) return;
+        item.materials = (item.materials || []).filter((_material, index) => String(index) !== String(target.dataset.materialIndex));
+        item.updatedAt = new Date().toISOString();
+        renderPool();
+        savePoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
     });
     document.body.addEventListener("input", (event) => {
       const target = event.target;
@@ -829,6 +1062,10 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       const remarkId = target.dataset.planRemark;
       const materialNameId = target.dataset.materialName;
       const materialUrlId = target.dataset.materialUrl;
+      const poolRawId = target.dataset.poolRaw;
+      const poolRemarkId = target.dataset.poolRemark;
+      const poolMaterialNameId = target.dataset.poolMaterialName;
+      const poolMaterialUrlId = target.dataset.poolMaterialUrl;
       if (rawId) {
         const plan = findPlan(rawId);
         if (plan) { plan.rawContent = target.value.trim(); plan.updatedAt = new Date().toISOString(); }
@@ -843,6 +1080,19 @@ function renderMomentPlannerHtml(publicBaseUrl) {
         if (materialNameId && material) material.name = target.value.trim();
         if (materialUrlId && material) material.url = target.value.trim();
         if (plan) plan.updatedAt = new Date().toISOString();
+      }
+      if (poolRawId || poolRemarkId) {
+        const item = findPoolItem(poolRawId || poolRemarkId);
+        if (poolRawId && item) item.rawContent = target.value.trim();
+        if (poolRemarkId && item) item.remark = target.value.trim();
+        if (item) item.updatedAt = new Date().toISOString();
+      }
+      if (poolMaterialNameId || poolMaterialUrlId) {
+        const item = findPoolItem(poolMaterialNameId || poolMaterialUrlId);
+        const material = item?.materials?.[Number(target.dataset.materialIndex)];
+        if (poolMaterialNameId && material) material.name = target.value.trim();
+        if (poolMaterialUrlId && material) material.url = target.value.trim();
+        if (item) item.updatedAt = new Date().toISOString();
       }
       renderCalendar();
     });
@@ -860,24 +1110,56 @@ function renderMomentPlannerHtml(publicBaseUrl) {
         if (material) material.type = target.value;
         if (plan) plan.updatedAt = new Date().toISOString();
       }
+      const poolMaterialTypeId = target.dataset.poolMaterialType;
+      if (poolMaterialTypeId) {
+        const item = findPoolItem(poolMaterialTypeId);
+        const material = item?.materials?.[Number(target.dataset.materialIndex)];
+        if (material) material.type = target.value;
+        if (item) {
+          item.updatedAt = new Date().toISOString();
+          await savePoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+        }
+      }
       const uploadId = target.dataset.uploadMaterial;
       if (uploadId) {
-        const plan = findPlan(uploadId);
-        if (!plan) return;
-        const files = Array.from(target.files || []);
-        if (!files.length) return;
-        setStatus("正在上传素材...");
-        try {
-          plan.materials = Array.isArray(plan.materials) ? plan.materials : [];
-          for (const file of files) plan.materials.push(await uploadMaterial(file));
-          plan.updatedAt = new Date().toISOString();
-          renderEntries();
-          setStatus("素材已上传，点保存后生效");
-        } catch (error) {
-          setStatus("素材上传失败：" + error.message, true);
-        } finally {
-          target.value = "";
-        }
+        await uploadFilesToPlan(uploadId, target.files, true);
+        target.value = "";
+      }
+      const uploadPoolId = target.dataset.uploadPool;
+      if (uploadPoolId) {
+        await uploadFilesToPool(uploadPoolId, target.files);
+        target.value = "";
+      }
+    });
+    document.body.addEventListener("focusout", (event) => {
+      const target = event.target;
+      if (target.dataset.poolRaw || target.dataset.poolRemark || target.dataset.poolMaterialName || target.dataset.poolMaterialUrl) {
+        savePoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
+    });
+    document.body.addEventListener("dragover", (event) => {
+      const zone = event.target.closest("[data-drop-material], [data-drop-pool], #poolDropZone");
+      if (!zone) return;
+      event.preventDefault();
+      zone.classList.add("drag-over");
+      zone.closest("[data-plan-card]")?.classList.add("drag-over");
+    });
+    document.body.addEventListener("dragleave", (event) => {
+      const zone = event.target.closest("[data-drop-material], [data-drop-pool], #poolDropZone");
+      if (!zone || (event.relatedTarget && zone.contains(event.relatedTarget))) return;
+      zone.classList.remove("drag-over");
+      zone.closest("[data-plan-card]")?.classList.remove("drag-over");
+    });
+    document.body.addEventListener("drop", async (event) => {
+      const zone = event.target.closest("[data-drop-material], [data-drop-pool], #poolDropZone");
+      if (!zone) return;
+      event.preventDefault();
+      zone.classList.remove("drag-over");
+      zone.closest("[data-plan-card]")?.classList.remove("drag-over");
+      if (zone.dataset.dropMaterial) {
+        await uploadFilesToPlan(zone.dataset.dropMaterial, event.dataTransfer?.files, true);
+      } else {
+        await uploadFilesToPool(zone.dataset.dropPool || "", event.dataTransfer?.files);
       }
     });
     loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
