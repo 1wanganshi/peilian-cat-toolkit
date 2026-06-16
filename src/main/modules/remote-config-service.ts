@@ -94,7 +94,7 @@ export class RemoteConfigService {
     return {
       prompts: Array.isArray(config.prompts) ? config.prompts : [],
       update: {
-        latestVersion: config.update?.latestVersion || '0.1.0',
+        latestVersion: config.update?.latestVersion || '0.1.1',
         downloadUrl: config.update?.downloadUrl || '',
         releaseNotes: config.update?.releaseNotes || '',
         force: Boolean(config.update?.force),

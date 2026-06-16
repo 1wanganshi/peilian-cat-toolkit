@@ -3,11 +3,11 @@ const CONFIG_KEY = 'app:config';
 const DEFAULT_CONFIG = {
   prompts: [],
   update: {
-    latestVersion: '0.1.0',
+    latestVersion: '0.1.1',
     downloadUrl: '',
-    releaseNotes: '初始版本',
+    releaseNotes: '新增短视频脚本今日选题能力，并优化后台提示词更新流程。',
     force: false,
-    publishedAt: '2026-06-15T00:00:00.000Z'
+    publishedAt: '2026-06-16T00:00:00.000Z'
   },
   meta: {
     promptRevision: 0,
@@ -43,7 +43,7 @@ export default {
       if (url.pathname === '/api/update/check' && request.method === 'GET') {
         const config = await readConfig(env);
         const currentVersion = url.searchParams.get('currentVersion') || '0.0.0';
-        const latestVersion = config.update?.latestVersion || '0.1.0';
+        const latestVersion = config.update?.latestVersion || '0.1.1';
         return jsonResponse({
           currentVersion,
           latestVersion,
@@ -142,14 +142,14 @@ function normalizePrompt(input) {
 }
 
 function assertAdmin(request, env) {
-  const token = env.ADMIN_TOKEN || '';
-  const authorization = request.headers.get('authorization') || '';
-  const incoming = authorization.replace(/^Bearer\s+/iu, '').trim();
-  if (!token || incoming !== token) {
-    const error = new Error('Unauthorized');
-    error.status = 401;
-    throw error;
-  }
+  const username = env.ADMIN_USERNAME || 'admin';
+  const password = env.ADMIN_PASSWORD || '12345678';
+  const incomingUsername = request.headers.get('x-admin-username') || '';
+  const incomingPassword = request.headers.get('x-admin-password') || '';
+  if (incomingUsername === username && incomingPassword === password) return;
+  const error = new Error('Unauthorized');
+  error.status = 401;
+  throw error;
 }
 
 function text(value) {
@@ -184,7 +184,7 @@ function withCors(response) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', '*');
   headers.set('access-control-allow-methods', 'GET,PUT,OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type,authorization');
+  headers.set('access-control-allow-headers', 'content-type,x-admin-username,x-admin-password');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -232,6 +232,9 @@ function renderAdminHtml(publicBaseUrl) {
     .editor-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
     .advanced { display: none; border-top: 1px solid #e9e2d7; padding-top: 14px; }
     .advanced.open { display: grid; gap: 12px; }
+    .hidden { display: none; }
+    .login-panel { max-width: 520px; margin: 0 auto; width: 100%; }
+    .admin-content { display: grid; gap: 18px; }
     @media (max-width: 980px) { .split, .stats { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -244,6 +247,17 @@ function renderAdminHtml(publicBaseUrl) {
     <div class="muted">${publicBaseUrl}</div>
   </header>
   <main>
+    <section class="stack login-panel" id="loginPanel">
+      <h2>后台登录</h2>
+      <label>账号 <input id="username" autocomplete="username" placeholder="请输入账号" /></label>
+      <label>密码 <input id="password" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
+      <div class="row">
+        <button id="login">登录</button>
+      </div>
+      <div class="status" id="loginStatus"></div>
+    </section>
+
+    <div class="admin-content hidden" id="adminContent">
     <section class="stack">
       <div class="stats">
         <div class="stat"><span class="muted">模块数量</span><strong id="statCount">0</strong></div>
@@ -251,7 +265,6 @@ function renderAdminHtml(publicBaseUrl) {
         <div class="stat"><span class="muted">最近发布</span><strong id="statUpdatedAt">-</strong></div>
       </div>
       <div class="row">
-        <label style="flex:1; min-width:260px">后台 Token <input id="token" type="password" placeholder="粘贴 ADMIN_TOKEN" /></label>
         <button id="load">读取后台</button>
         <button class="secondary" id="save">保存发布</button>
       </div>
@@ -299,11 +312,13 @@ function renderAdminHtml(publicBaseUrl) {
         </div>
       </div>
     </section>
+    </div>
   </main>
   <script>
     let state = { prompts: [], update: {}, meta: { promptRevision: 0, promptsUpdatedAt: '', promptCount: 0 } };
     let editingPromptId = "";
     let advancedOpen = false;
+    let loggedIn = false;
     const $ = (id) => document.getElementById(id);
     const api = location.origin;
 
@@ -311,12 +326,19 @@ function renderAdminHtml(publicBaseUrl) {
       $("status").textContent = text;
       $("status").style.color = danger ? "#b85045" : "#2e7869";
     }
+    function setLoginStatus(text, danger) {
+      $("loginStatus").textContent = text;
+      $("loginStatus").style.color = danger ? "#b85045" : "#2e7869";
+    }
     function authHeaders() {
-      return { authorization: "Bearer " + $("token").value.trim(), "content-type": "application/json" };
+      return {
+        "x-admin-username": $("username").value.trim(),
+        "x-admin-password": $("password").value,
+        "content-type": "application/json"
+      };
     }
     async function loadConfig() {
-      const path = $("token").value.trim() ? "/api/admin/config" : "/api/config";
-      const res = await fetch(api + path, { headers: $("token").value.trim() ? authHeaders() : {} });
+      const res = await fetch(api + "/api/admin/config", { headers: authHeaders() });
       if (!res.ok) throw new Error(await res.text());
       state = await res.json();
       state.meta = state.meta || { promptRevision: 0, promptsUpdatedAt: '', promptCount: 0 };
@@ -331,6 +353,18 @@ function renderAdminHtml(publicBaseUrl) {
       state.meta = state.meta || { promptRevision: 0, promptsUpdatedAt: '', promptCount: 0 };
       hydrate();
       setStatus("已保存并发布");
+    }
+    async function login() {
+      setLoginStatus("正在登录...");
+      try {
+        await loadConfig();
+        loggedIn = true;
+        $("loginPanel").classList.add("hidden");
+        $("adminContent").classList.remove("hidden");
+        setStatus("已登录，提示词已读取");
+      } catch (error) {
+        setLoginStatus("登录失败：账号或密码不正确", true);
+      }
     }
     function hydrate() {
       $("statCount").textContent = String(state.prompts.length || 0);
@@ -370,6 +404,10 @@ function renderAdminHtml(publicBaseUrl) {
 
     $("load").onclick = () => loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
     $("save").onclick = () => saveConfig().catch((error) => setStatus("保存失败：" + error.message, true));
+    $("login").onclick = login;
+    $("password").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") login();
+    });
     $("newPrompt").onclick = () => { clearPrompt(); setStatus("已准备新增模块"); };
     $("resetPrompt").onclick = () => { clearPrompt(); setStatus("编辑器已重置"); };
     $("toggleAdvanced").onclick = () => { advancedOpen = !advancedOpen; syncAdvanced(); };
@@ -406,7 +444,9 @@ function renderAdminHtml(publicBaseUrl) {
         setStatus("模块已删除，记得保存发布");
       }
     });
-    loadConfig().catch(() => setStatus("请输入后台 Token 后读取提示词"));
+    $("username").value = "admin";
+    $("password").value = "";
+    setLoginStatus("请输入账号和密码登录");
   </script>
 </body>
 </html>`;

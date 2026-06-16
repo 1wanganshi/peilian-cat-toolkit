@@ -1,10 +1,10 @@
 {
   "prompts": [],
   "update": {
-    "latestVersion": "0.1.0",
+    "latestVersion": "0.1.1",
     "downloadUrl": "",
-    "releaseNotes": "初始版本",
+    "releaseNotes": "新增短视频脚本今日选题能力，并优化后台提示词更新流程。",
     "force": false,
-    "publishedAt": "2026-06-15T00:00:00.000Z"
+    "publishedAt": "2026-06-16T00:00:00.000Z"
   }
 }

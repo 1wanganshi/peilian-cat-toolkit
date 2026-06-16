@@ -19,23 +19,21 @@ function createKv(initial = {}) {
 test('public config endpoint returns prompts-only defaults', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/config'), {
     CONFIG: createKv(),
-    ADMIN_TOKEN: 'secret',
     PUBLIC_BASE_URL: 'https://example.com'
   });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.prompts, []);
   assert.equal(body.models, undefined);
-  assert.equal(body.update.latestVersion, '0.1.0');
+  assert.equal(body.update.latestVersion, '0.1.1');
 });
 
-test('admin writes require bearer token', async () => {
+test('admin writes require username and password', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/admin/config', {
     method: 'PUT',
     body: '{}'
   }), {
     CONFIG: createKv(),
-    ADMIN_TOKEN: 'secret',
     PUBLIC_BASE_URL: 'https://example.com'
   });
   assert.equal(response.status, 401);
@@ -46,7 +44,8 @@ test('admin can update prompts and update metadata only', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/admin/config', {
     method: 'PUT',
     headers: {
-      authorization: 'Bearer secret',
+      'x-admin-username': 'admin',
+      'x-admin-password': '12345678',
       'content-type': 'application/json'
     },
     body: JSON.stringify({
@@ -56,14 +55,12 @@ test('admin can update prompts and update metadata only', async () => {
     })
   }), {
     CONFIG: kv,
-    ADMIN_TOKEN: 'secret',
     PUBLIC_BASE_URL: 'https://example.com'
   });
   assert.equal(response.status, 200);
 
   const publicResponse = await worker.fetch(new Request('https://example.com/api/config'), {
     CONFIG: kv,
-    ADMIN_TOKEN: 'secret',
     PUBLIC_BASE_URL: 'https://example.com'
   });
   const publicBody = await publicResponse.json();
