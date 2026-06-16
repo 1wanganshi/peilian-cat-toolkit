@@ -5,6 +5,7 @@ import type {
   MomentsGenerateTextResult,
   MomentsImageResult,
   MomentsRewriteResult,
+  TodayVideoTopic,
   VideoScript,
   VideoTopic
 } from '../../shared/types';
@@ -57,7 +58,25 @@ export class AiService {
     ];
   }
 
-  async generateScript(topic: VideoTopic, duration: number, requirements?: string): Promise<VideoScript> {
+  async generateTodayTopics(searchResults: HotContent[]): Promise<TodayVideoTopic[]> {
+    const projectContext = '陪练猫，英语启蒙方向，面向家长和儿童英语学习场景。';
+    const generated = await this.generateJsonWithLanguageModel<{ topics?: Array<Omit<TodayVideoTopic, 'id'>> }>(
+      await this.promptService.buildPrompt('video-today-topics', {
+        projectContext,
+        searchResults: searchResults.slice(0, 18)
+      })
+    );
+
+    const topics = generated?.topics?.length ? generated.topics : this.fallbackTodayTopics(searchResults);
+    return topics.slice(0, 4).map((item, index) => ({
+      id: `today_${index + 1}`,
+      title: item.title,
+      coreIdea: item.coreIdea,
+      facts: item.facts.slice(0, 4)
+    }));
+  }
+
+  async generateScript(topic: VideoTopic | TodayVideoTopic, duration: number, requirements?: string): Promise<VideoScript> {
     const generated = await this.generateJsonWithLanguageModel<VideoScript>(
       await this.promptService.buildPrompt('video-script-generate', { topic, duration, requirements })
     );
@@ -78,7 +97,7 @@ export class AiService {
         {
           scene: 2,
           duration: duration <= 15 ? '3-10秒' : '3-18秒',
-          content: `拆解选题核心：${topic.reason} 结合一个生活化例子讲清楚问题。`,
+          content: `拆解选题核心：${this.topicReason(topic)} 结合一个生活化例子讲清楚问题。`,
           visual: '左侧人物讲解，右侧出现三点式清单。',
           textOverlay: '痛点 / 原因 / 正确做法'
         },
@@ -289,12 +308,62 @@ export class AiService {
       .join('\n');
   }
 
+  private topicReason(topic: VideoTopic | TodayVideoTopic): string {
+    return 'reason' in topic ? topic.reason : topic.coreIdea;
+  }
+
   private inferArticleContentType(topic: string): ArticleContentType {
     if (/坑|误区|错|避坑/u.test(topic)) return 'mistakes';
     if (/对比|区别|做对|做错/u.test(topic)) return 'comparison';
     if (/推荐|绘本|故事|清单/u.test(topic)) return 'recommendation';
     if (/方法|怎么|如何/u.test(topic)) return 'tips';
     return 'list';
+  }
+
+  private fallbackTodayTopics(searchResults: HotContent[]): Array<Omit<TodayVideoTopic, 'id'>> {
+    const references = searchResults.slice(0, 4).map((item) => item.title);
+    return [
+      {
+        title: '为什么孩子背了很多单词，还是不会开口说英语？',
+        coreIdea: '把家长的关注点从“单词量”转到“输入方式”和“表达场景”，讲清楚启蒙阶段为什么要先让孩子听懂、愿意说。',
+        facts: [
+          references[0] || '英语启蒙讨论中，家长常把“会背单词”当作进步的核心指标。',
+          '单词孤立记忆不等于能在真实场景里表达。',
+          '可理解输入、固定句型和亲子互动更容易转化为输出。',
+          '磨耳朵只有在和画面、情境结合时，才更容易形成理解。'
+        ]
+      },
+      {
+        title: '英语磨耳朵没效果，可能少了这一步',
+        coreIdea: '解释磨耳朵不是单纯播放，而是要让声音和画面、动作、情境形成联结，帮助家长调整家庭输入方式。',
+        facts: [
+          references[1] || '“英语磨耳朵是否有效”是高频家长问题。',
+          '背景音式输入很难帮助孩子建立意义连接。',
+          '重复、稳定、可理解的材料更容易被孩子接受。',
+          '家长陪伴式输入通常比完全放任播放更有效。'
+        ]
+      },
+      {
+        title: '自然拼读不是越早越好，关键看孩子有没有两个基础',
+        coreIdea: '帮助家长理解自然拼读需要听辨能力和一定词汇经验，避免直接把启蒙做成规则背诵。',
+        facts: [
+          references[2] || '自然拼读是儿童英语教育中的热门方法。',
+          '孩子需要先有音素敏感度，再进入拼读规则。',
+          '如果对英语声音还不熟，直接学规则容易变机械记忆。',
+          '儿歌、绘本和游戏更适合打基础。'
+        ]
+      },
+      {
+        title: '家长最容易踩的坑：把英语启蒙做成考试训练',
+        coreIdea: '强调启蒙阶段重在兴趣、输入和互动，不是早早把家庭学习变成刷题和背诵。',
+        facts: [
+          references[3] || '很多家长在英语启蒙中容易焦虑，想快速看结果。',
+          '过早强调考试结果，会降低孩子对英语的自然兴趣。',
+          '家庭英语学习更适合少量高频、可重复的场景化输入。',
+          '亲子共学比单向灌输更容易长期坚持。'
+        ]
+      }
+    ];
   }
 
   private verticalCardPrompt(topic: string, detail: string): string {

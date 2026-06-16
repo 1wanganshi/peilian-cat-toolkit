@@ -1,12 +1,13 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Form, Input, Popconfirm, Select, Space, Switch, Tabs, Tag, message } from 'antd';
-import { CheckCircle2, DownloadCloud, ExternalLink, PlugZap, Save, Trash2 } from 'lucide-react';
+import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Select, Space, Switch, Tag, message } from 'antd';
+import { CheckCircle2, DownloadCloud, ExternalLink, PlugZap, RefreshCw, Save, Trash2 } from 'lucide-react';
 import type {
   ModelConfig,
   ModelConfigInput,
   ModelKind,
   ModelProvider,
+  PromptConfigMeta,
   UpdateCheckResult
 } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
@@ -31,13 +32,17 @@ const DEFAULT_MODEL_INPUT: ModelConfigInput = {
 
 export function BackendManagerPage(): JSX.Element {
   return (
-    <Tabs
+    <div className="single-column">
+      <BackendPromptSyncPanel />
+      <Collapse
+        ghost
+        className="advanced-collapse"
       items={[
-        { key: 'models', label: '模型管理', children: <ModelManagerPanel /> },
-        { key: 'prompts', label: '提示词管理', children: <BackendPromptSyncPanel /> },
-        { key: 'updates', label: '软件更新', children: <UpdatePanel /> }
+          { key: 'models', label: '高级设置：模型管理', children: <ModelManagerPanel /> },
+          { key: 'updates', label: '高级设置：软件更新', children: <UpdatePanel /> }
       ]}
     />
+    </div>
   );
 }
 
@@ -106,14 +111,23 @@ function UpdatePanel(): JSX.Element {
 
 function BackendPromptSyncPanel(): JSX.Element {
   const [syncing, setSyncing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [lastSync, setLastSync] = useState<string | undefined>();
+  const [lastRevision, setLastRevision] = useState<number | undefined>();
   const [imported, setImported] = useState<number | undefined>();
+  const [meta, setMeta] = useState<PromptConfigMeta | undefined>();
 
   useEffect(() => {
     const saved = localStorage.getItem('peilian-prompt-last-sync');
+    const revision = Number(localStorage.getItem('peilian-prompt-last-revision') || 0);
     if (saved) setLastSync(saved);
+    if (revision > 0) setLastRevision(revision);
+    void checkPromptMeta();
   }, []);
+
+  const localRevision = meta?.localPromptRevision ?? lastRevision ?? 0;
+  const hasPromptUpdate = Boolean(meta && meta.promptRevision > localRevision);
 
   async function syncPrompts(): Promise<void> {
     setSyncing(true);
@@ -122,7 +136,16 @@ function BackendPromptSyncPanel(): JSX.Element {
       const result = await window.electron.syncPromptTemplatesFromBackend();
       setImported(result.imported);
       setLastSync(result.syncedAt);
+      setLastRevision(result.promptRevision);
+      setMeta({
+        promptRevision: result.promptRevision,
+        promptsUpdatedAt: result.promptsUpdatedAt,
+        promptCount: result.promptCount,
+        localPromptRevision: result.promptRevision,
+        localPromptsUpdatedAt: result.promptsUpdatedAt
+      });
       localStorage.setItem('peilian-prompt-last-sync', result.syncedAt);
+      localStorage.setItem('peilian-prompt-last-revision', String(result.promptRevision));
       message.success(`已从后台更新 ${result.imported} 个提示词`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '更新提示词失败，请稍后重试');
@@ -131,33 +154,65 @@ function BackendPromptSyncPanel(): JSX.Element {
     }
   }
 
+  async function checkPromptMeta(): Promise<void> {
+    setChecking(true);
+    try {
+      setMeta(await window.electron.getPromptConfigMeta());
+    } catch {
+      setMeta(undefined);
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
-    <div className="single-column">
-      <section className="panel">
-        {error && <ErrorBanner message={error} />}
-        <Card title="更新提示词" variant="borderless">
-          <Space direction="vertical" size={16} className="full-width">
-            <div className="model-note">
-              <CheckCircle2 size={18} />
-              <span>提示词在网页后台维护。点击后会把后台最新提示词下载到本机，APP 会在生成内容时直接使用，本页面不展示提示词正文。</span>
+    <section className="panel">
+      {error && <ErrorBanner message={error} />}
+      <Card title="提示词更新" variant="borderless">
+        <Space direction="vertical" size={16} className="full-width">
+          <div className="prompt-status-grid">
+            <div>
+              <span>后台版本</span>
+              <strong>{meta ? `#${meta.promptRevision}` : checking ? '检查中' : '未读取'}</strong>
             </div>
-            <Space wrap>
-              <Button type="primary" icon={<DownloadCloud size={16} />} loading={syncing} onClick={syncPrompts}>
-                更新提示词
-              </Button>
-            </Space>
-            {lastSync && (
-              <Alert
-                type="success"
-                showIcon
-                message="本机提示词已更新"
-                description={`最近同步时间：${new Date(lastSync).toLocaleString()}${typeof imported === 'number' ? `，本次更新 ${imported} 个提示词。` : ''}`}
-              />
-            )}
+            <div>
+              <span>本机版本</span>
+              <strong>{localRevision > 0 ? `#${localRevision}` : '未同步'}</strong>
+            </div>
+            <div>
+              <span>模块数量</span>
+              <strong>{meta?.promptCount ?? '-'}</strong>
+            </div>
+          </div>
+          <Alert
+            type={!meta ? 'info' : hasPromptUpdate ? 'warning' : 'success'}
+            showIcon
+            message={!meta ? '还未读取后台版本' : hasPromptUpdate ? '后台提示词有更新' : '本机提示词已是最新'}
+            description={
+              !meta
+                ? '点击“检查后台版本”或“更新提示词”，系统会连接后台读取最新状态。'
+                : hasPromptUpdate
+                ? '点击“更新提示词”，前端生成内容时会立刻使用后台发布的新提示词。'
+                : lastSync
+                  ? `最近同步时间：${new Date(lastSync).toLocaleString()}${typeof imported === 'number' ? `，本次更新 ${imported} 个提示词。` : ''}`
+                  : '还没有同步记录，可以先点击检查或直接更新。'
+            }
+          />
+          <div className="model-note">
+            <CheckCircle2 size={18} />
+            <span>提示词正文只在网页后台维护；这里不展示内容，只负责检查和更新。</span>
+          </div>
+          <Space wrap>
+            <Button type="primary" icon={<DownloadCloud size={16} />} loading={syncing} onClick={syncPrompts}>
+              更新提示词
+            </Button>
+            <Button icon={<RefreshCw size={16} />} loading={checking} onClick={checkPromptMeta}>
+              检查后台版本
+            </Button>
           </Space>
-        </Card>
-      </section>
-    </div>
+        </Space>
+      </Card>
+    </section>
   );
 }
 

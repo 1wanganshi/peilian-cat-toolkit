@@ -1,8 +1,8 @@
 import { Button, Card, Input, Radio, Space, Spin, Tag, message } from 'antd';
-import { Download, Sparkles } from 'lucide-react';
+import { CalendarDays, Download, RefreshCw, Sparkles } from 'lucide-react';
 import type { JSX } from 'react';
-import { useState } from 'react';
-import type { VideoScript, VideoTopic } from '../../shared/types';
+import { useMemo, useState } from 'react';
+import type { TodayVideoTopic, VideoScript, VideoTopic } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
 import { ErrorBanner } from '../components/error-banner';
 
@@ -13,14 +13,22 @@ export function ScriptGeneratorPage(): JSX.Element {
   const [requirements, setRequirements] = useState('');
   const [duration, setDuration] = useState(30);
   const [topics, setTopics] = useState<VideoTopic[]>([]);
-  const [selectedTopic, setSelectedTopic] = useState<VideoTopic | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<VideoTopic | TodayVideoTopic | null>(null);
+  const [todayTopics, setTodayTopics] = useState<TodayVideoTopic[]>([]);
   const [script, setScript] = useState<VideoScript | null>(null);
   const [loading, setLoading] = useState(false);
+  const [todayLoading, setTodayLoading] = useState(false);
+  const [todayStep, setTodayStep] = useState<'searching' | 'organizing'>('searching');
   const [error, setError] = useState('');
+
+  const todayLoadingText = useMemo(() => {
+    if (!todayLoading) return '';
+    return todayStep === 'searching' ? '正在搜索英语启蒙热点选题...' : '正在整理今日选题...';
+  }, [todayLoading, todayStep]);
 
   async function searchTopics(): Promise<void> {
     if (!topic.trim()) {
-      setError('请输入视频主题');
+      setError('请输入选题');
       return;
     }
 
@@ -38,8 +46,26 @@ export function ScriptGeneratorPage(): JSX.Element {
     }
   }
 
-  async function generateScript(): Promise<void> {
-    if (!selectedTopic) {
+  async function loadTodayTopics(forceRefresh = false): Promise<void> {
+    setTodayLoading(true);
+    setTodayStep('searching');
+    setError('');
+    setScript(null);
+    try {
+      window.setTimeout(() => setTodayStep('organizing'), 700);
+      const result = await window.electron.generateTodayTopics(forceRefresh);
+      setTodayTopics(result);
+      setSelectedTopic(result[0] ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '今日选题搜索失败，请稍后重试。');
+    } finally {
+      setTodayLoading(false);
+    }
+  }
+
+  async function generateScript(topicItem?: VideoTopic | TodayVideoTopic | null): Promise<void> {
+    const target = topicItem ?? selectedTopic;
+    if (!target) {
       setError('请选择一个选题');
       return;
     }
@@ -47,10 +73,14 @@ export function ScriptGeneratorPage(): JSX.Element {
     setLoading(true);
     setError('');
     try {
-      const result = await window.electron.generateScript({ topic: selectedTopic, duration, requirements });
+      const result = await window.electron.generateScript({
+        topic: target,
+        duration,
+        requirements
+      });
       setScript(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '脚本生成失败');
+      setError(err instanceof Error ? err.message : '脚本生成失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -97,7 +127,30 @@ export function ScriptGeneratorPage(): JSX.Element {
           </Space>
         </Card>
 
-        <Card title="选题列表" bordered={false}>
+        <Card title="今日选题" bordered={false}>
+          <Space direction="vertical" size={12} className="full-width">
+            <div className="model-note">
+              <CalendarDays size={18} />
+              <span>点击后自动搜索英语启蒙热点，再整理成 4 个适合短视频创作的选题。</span>
+            </div>
+            <Space wrap>
+              <Button
+                type="primary"
+                icon={<Sparkles size={16} />}
+                loading={todayLoading}
+                onClick={() => loadTodayTopics(false)}
+              >
+                今日选题
+              </Button>
+              <Button icon={<RefreshCw size={16} />} loading={todayLoading} onClick={() => loadTodayTopics(true)}>
+                重新生成今日选题
+              </Button>
+            </Space>
+            {todayLoading && <div className="loading-hint">{todayLoadingText}</div>}
+          </Space>
+        </Card>
+
+        <Card title="搜索选题" bordered={false}>
           {topics.length === 0 ? (
             <EmptyState title="暂无选题" description="输入主题后会生成 5 个可拍摄方向。" />
           ) : (
@@ -116,7 +169,7 @@ export function ScriptGeneratorPage(): JSX.Element {
               ))}
             </div>
           )}
-          <Button type="primary" icon={<Sparkles size={16} />} block onClick={generateScript} disabled={!selectedTopic}>
+          <Button type="primary" icon={<Sparkles size={16} />} block onClick={() => generateScript()} disabled={!selectedTopic}>
             生成脚本
           </Button>
         </Card>
@@ -125,7 +178,33 @@ export function ScriptGeneratorPage(): JSX.Element {
       <section className="panel">
         {error && <ErrorBanner message={error} />}
         {loading && <Spin className="center-spin" tip="正在生成内容..." />}
-        {!loading && !script && <EmptyState title="等待脚本" description="选择选题后生成标题、钩子、分镜和标签。" />}
+        {!loading && !script && todayTopics.length === 0 && (
+          <EmptyState title="等待脚本" description="可以先点今日选题，或者输入主题搜索短视频选题。" />
+        )}
+
+        {todayTopics.length > 0 && (
+          <div className="topic-grid">
+            {todayTopics.map((item) => (
+              <Card key={item.id} className="topic-result-card" title={item.title} variant="borderless">
+                <Space direction="vertical" size={12} className="full-width">
+                  <p>{item.coreIdea}</p>
+                  <div className="fact-list">
+                    {item.facts.map((fact, index) => (
+                      <div className="fact-item" key={`${item.id}-${index}`}>
+                        <Tag color="blue">{index + 1}</Tag>
+                        <span>{fact}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button type="primary" onClick={() => generateScript(item)} disabled={loading}>
+                    选择该选题
+                  </Button>
+                </Space>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {script && (
           <Card title={script.title} bordered={false}>
             <div className="script-result">

@@ -23,6 +23,41 @@ type SearchEntry = {
 };
 
 export class SearchEngine {
+  async searchEnglishEnlightenmentTopics(): Promise<HotContent[]> {
+    const keywords = [
+      '英语启蒙 热点',
+      '儿童英语学习 家长 痛点',
+      '幼儿英语启蒙 方法',
+      '英语磨耳朵 是否有效',
+      '自然拼读 儿童英语',
+      '分级阅读 英语启蒙',
+      '孩子英语不开口 原因',
+      '家庭英语启蒙 误区',
+      '儿童英语输入 输出',
+      '亲子英语学习'
+    ];
+
+    if (process.env.PEILIAN_MOCK_SEARCH === '1') {
+      return keywords.slice(0, 5).flatMap((keyword) =>
+        this.mockSearchHotContent(keyword, ['zhihu', 'wechat', 'xiaohongshu']).slice(0, 2)
+      );
+    }
+
+    const searches = keywords.map((keyword) =>
+      this.searchHotContent(keyword, ['zhihu', 'wechat', 'xiaohongshu']).catch(() => [])
+    );
+    const results = (await Promise.all(searches)).flat();
+    const uniqueResults = Array.from(new Map(results.map((item) => [item.url || item.title, item])).values());
+
+    if (uniqueResults.length === 0) {
+      throw new Error('今日选题搜索失败，请稍后重试。');
+    }
+
+    return uniqueResults
+      .sort((a, b) => b.views + b.likes * 5 + b.comments * 8 - (a.views + a.likes * 5 + a.comments * 8))
+      .slice(0, 24);
+  }
+
   async searchHotContent(topic: string, platforms: Platform[]): Promise<HotContent[]> {
     const normalizedTopic = topic.trim();
     if (!normalizedTopic) {

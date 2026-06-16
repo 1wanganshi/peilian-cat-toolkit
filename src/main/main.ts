@@ -78,6 +78,9 @@ function registerHandlers(): void {
   ipcMain.handle('search-hot-topics', async (_event, topic: string) =>
     scriptGenerator.searchAndGenerateTopics(topic)
   );
+  ipcMain.handle('generate-today-topics', async (_event, forceRefresh?: boolean) =>
+    scriptGenerator.generateTodayTopics(Boolean(forceRefresh))
+  );
   ipcMain.handle('generate-script', async (_event, data) =>
     scriptGenerator.generateScript(data.topic, data.duration, data.requirements)
   );
@@ -128,6 +131,7 @@ function registerHandlers(): void {
   ipcMain.handle('save-model', async (_event, input) => modelManager.saveModel(input));
   ipcMain.handle('delete-model', async (_event, id: string) => modelManager.deleteModel(id));
   ipcMain.handle('check-model', async (_event, input) => modelManager.checkModel(input));
+  ipcMain.handle('get-prompt-config-meta', async () => promptService.getPromptConfigMeta());
   ipcMain.handle('sync-prompt-templates-from-backend', async () => promptService.syncRemoteTemplates());
   ipcMain.handle('check-for-updates', async () => remoteConfigService.checkUpdate(app.getVersion()));
   ipcMain.handle('open-external-url', async (_event, url: string) => {

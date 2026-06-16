@@ -1,4 +1,4 @@
-import type { PromptTemplate } from '../../shared/types';
+import type { PromptConfigMeta, PromptTemplate } from '../../shared/types';
 import { buildApiUrl } from './api-url';
 
 export interface RemoteUpdateConfig {
@@ -12,6 +12,7 @@ export interface RemoteUpdateConfig {
 export interface RemoteAppConfig {
   prompts: PromptTemplate[];
   update: RemoteUpdateConfig;
+  meta: PromptConfigMeta;
 }
 
 export interface UpdateCheckResult extends RemoteUpdateConfig {
@@ -76,6 +77,11 @@ export class RemoteConfigService {
     return config?.prompts ?? [];
   }
 
+  async getPromptMeta(): Promise<PromptConfigMeta> {
+    const config = await this.getConfig(true);
+    return config?.meta ?? this.defaultMeta();
+  }
+
   isEnabled(): boolean {
     return process.env.PEILIAN_REMOTE_CONFIG_DISABLED !== '1';
   }
@@ -93,7 +99,24 @@ export class RemoteConfigService {
         releaseNotes: config.update?.releaseNotes || '',
         force: Boolean(config.update?.force),
         publishedAt: config.update?.publishedAt
-      }
+      },
+      meta: this.normalizeMeta(config.meta)
+    };
+  }
+
+  private normalizeMeta(meta?: Partial<PromptConfigMeta>): PromptConfigMeta {
+    return {
+      promptRevision: Number.isFinite(Number(meta?.promptRevision)) ? Number(meta?.promptRevision) : 0,
+      promptsUpdatedAt: typeof meta?.promptsUpdatedAt === 'string' ? meta.promptsUpdatedAt : '',
+      promptCount: Number.isFinite(Number(meta?.promptCount)) ? Number(meta?.promptCount) : 0
+    };
+  }
+
+  private defaultMeta(): PromptConfigMeta {
+    return {
+      promptRevision: 0,
+      promptsUpdatedAt: '',
+      promptCount: 0
     };
   }
 }

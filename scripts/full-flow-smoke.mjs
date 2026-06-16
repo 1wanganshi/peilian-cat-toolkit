@@ -23,6 +23,56 @@ const server = createServer(async (request, response) => {
     const parsed = JSON.parse(body || '{}');
     const prompt = parsed.messages?.[0]?.content ?? '';
     chatCalls += 1;
+    if (prompt.includes('今日选题') && prompt.includes('联网搜索结果')) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          topics: [
+            {
+              title: '为什么孩子背了很多单词，还是不会开口说英语？',
+              coreIdea: '把家长关注点从单词量转向可理解输入和真实表达场景。',
+              facts: ['单词量不等于表达力', '亲子互动能降低开口压力', '可理解输入更适合启蒙', '高频短句更容易迁移到生活']
+            },
+            {
+              title: '英语磨耳朵没效果，可能少了这一步',
+              coreIdea: '磨耳朵需要画面、动作和语境，不是单纯播放背景音。',
+              facts: ['背景音输入容易无效', '重复材料更容易熟悉', '画面帮助理解意义', '共听比放任播放更稳定']
+            },
+            {
+              title: '自然拼读不是越早越好',
+              coreIdea: '自然拼读需要听辨和词汇基础，不能直接变成规则背诵。',
+              facts: ['自然拼读依赖音素意识', '规则学习需要声音经验', '儿歌绘本可打基础', '过早规则化会增加挫败']
+            },
+            {
+              title: '英语启蒙别做成考试训练',
+              coreIdea: '启蒙阶段先保兴趣和输入，再逐步过渡到表达与规则。',
+              facts: ['家长教育焦虑常见', '过早刷题影响兴趣', '家庭场景适合少量高频', '亲子共学更容易坚持']
+            }
+          ]
+        }) } }]
+      }));
+      return;
+    }
+    if (prompt.includes('body 是分镜数组') || prompt.includes('textOverlay')) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          title: '少儿英语启蒙的真实方法',
+          hook: '孩子英语不开口，先别急着加单词量。',
+          body: [
+            {
+              scene: 1,
+              duration: '0-3秒',
+              content: '用家长熟悉的痛点开场，引出英语启蒙不是背单词这么简单。',
+              visual: '家长和孩子一起看英文绘本，镜头切到孩子沉默不说。',
+              textOverlay: '听了很多，为什么还不开口？'
+            }
+          ],
+          ending: '先收藏这条，今天回家就能换一种输入方式。',
+          keyPhrases: ['单词量不等于表达力'],
+          hashtags: ['#英语启蒙', '#儿童英语', '#亲子教育']
+        }) } }]
+      }));
+      return;
+    }
     if (chatCalls === 1) {
       response.end(JSON.stringify({
         choices: [{ message: { content: JSON.stringify([
@@ -220,7 +270,8 @@ try {
     });
 
     const topics = await api.searchHotTopics('少儿钢琴陪练');
-    const script = await api.generateScript({ topic: topics[0], duration: 30, requirements: '口播风格' });
+    const todayTopics = await api.generateTodayTopics(true);
+    const script = await api.generateScript({ topic: todayTopics[0], duration: 30, requirements: '口播风格' });
     const rewrite = await api.rewriteMoments('今天孩子主动练琴了', '日常真实风');
     const momentTexts = await api.generateMomentTexts({ idea: '孩子主动练琴', style: '真诚走心' });
     const momentImage = await api.generateMomentImage({ selectedText: momentTexts.results[0].text });
@@ -229,6 +280,7 @@ try {
 
     return {
       topics: topics?.length ?? 0,
+      todayTopics: todayTopics?.length ?? 0,
       scriptTitle: script?.title ?? '',
       scriptScenes: script?.body?.length ?? 0,
       rewriteVersions: rewrite?.results?.length ?? 0,
@@ -242,6 +294,7 @@ try {
   }, baseUrl);
 
   assert.ok(result.topics >= 1);
+  assert.equal(result.todayTopics, 4);
   assert.ok(result.scriptTitle.length >= 1);
   assert.ok(result.scriptScenes >= 1);
   assert.ok(result.rewriteVersions >= 1);

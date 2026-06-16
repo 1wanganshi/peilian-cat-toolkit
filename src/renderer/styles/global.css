@@ -190,6 +190,11 @@ textarea {
   min-height: 260px;
 }
 
+.loading-hint {
+  color: #1f6658;
+  font-weight: 700;
+}
+
 .generation-stream {
   width: min(760px, 100%);
   margin: 0 auto;
@@ -547,6 +552,38 @@ textarea {
   line-height: 1.6;
 }
 
+.prompt-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prompt-status-grid div {
+  display: grid;
+  gap: 6px;
+  min-height: 74px;
+  border: 1px solid #e4ded2;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 12px 14px;
+}
+
+.prompt-status-grid span {
+  color: #65736f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prompt-status-grid strong {
+  color: #24302f;
+  font-size: 20px;
+}
+
+.advanced-collapse {
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
 .prompt-template-list {
   display: grid;
   gap: 10px;
@@ -596,6 +633,39 @@ textarea {
   font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.topic-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.topic-result-card {
+  border: 1px solid #e4ded2;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.topic-result-card .ant-card-body {
+  display: grid;
+  gap: 12px;
+}
+
+.topic-result-card p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.fact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.fact-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
 }
 
 @media (max-width: 1180px) {

@@ -1,10 +1,50 @@
 import { app } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { PromptScenario, PromptSyncResult, PromptTemplate } from '../../shared/types';
+import type { PromptConfigMeta, PromptScenario, PromptSyncResult, PromptTemplate } from '../../shared/types';
 import { RemoteConfigService } from './remote-config-service';
 
 const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> = [
+  {
+    id: 'default-video-today-topics',
+    scenario: 'video-today-topics',
+    name: '今日短视频选题整理',
+    description: '根据英语启蒙相关搜索结果整理 4 个适合短视频创作的今日选题。',
+    requiredVariables: ['searchResults', 'projectContext'],
+    enabled: true,
+    builtIn: true,
+    template: `你是陪练猫的短视频选题策划专家，专注英语启蒙、少儿英语、儿童英语教育、家庭英语教育。
+
+项目定位：
+{{projectContext}}
+
+联网搜索结果：
+{{searchResults}}
+
+任务：根据搜索结果整理 4 个“今日选题”，面向家长用户，适合短视频脚本创作。
+
+选题方向优先关注：
+英语启蒙、儿童英语学习、家庭英语教育、家长陪练、英语启蒙认知、英语学习热点、儿童英语教育趋势、亲子英语学习、幼儿英语输入、自然拼读、分级阅读、英语磨耳朵、英语启蒙误区、家长教育焦虑、英语学习方法。
+
+要求：
+1. 必须生成 4 个选题。
+2. title 要有明确观点和吸引力，适合短视频标题。
+3. coreIdea 写清楚这个选题的主要理论、认知升级或内容大纲。
+4. facts 每个选题 3-4 条，尽量来自搜索结果，简洁明确。
+5. 不要直接复制搜索结果原文，要提炼成家长愿意看的选题。
+6. 只输出合法 JSON，不要 Markdown。
+
+输出格式：
+{
+  "topics": [
+    {
+      "title": "选题标题",
+      "coreIdea": "主要理论、认知或大纲内容",
+      "facts": ["事实依据1", "事实依据2", "事实依据3", "事实依据4"]
+    }
+  ]
+}`
+  },
   {
     id: 'default-video-topic-generate',
     scenario: 'video-topic-generate',
@@ -214,10 +254,12 @@ Warm parent-child English learning theme. Light background. Clean card layout. L
 
 export class PromptService {
   private readonly filePath: string;
+  private readonly metaFilePath: string;
   private readonly remoteConfigService = new RemoteConfigService();
 
   constructor(filePath = join(process.env.PEILIAN_CAT_USER_DATA ?? app.getPath('userData'), 'prompts.json')) {
     this.filePath = filePath;
+    this.metaFilePath = join(dirname(filePath), 'prompt-meta.json');
   }
 
   async listTemplates(): Promise<PromptTemplate[]> {
@@ -226,6 +268,7 @@ export class PromptService {
 
   async syncRemoteTemplates(): Promise<PromptSyncResult> {
     const remoteTemplates = await this.remoteConfigService.listRemotePrompts();
+    const remoteMeta = await this.remoteConfigService.getPromptMeta();
     const validRemoteTemplates = remoteTemplates.filter((item) => item.enabled && item.scenario && item.template);
     if (validRemoteTemplates.length === 0) {
       throw new Error('后台暂无可用提示词，请先在网页后台保存提示词');
@@ -243,7 +286,30 @@ export class PromptService {
       ...localFallbacks
     ];
     await this.writeTemplates(syncedTemplates);
-    return { imported: validRemoteTemplates.length, syncedAt: new Date().toISOString() };
+    const syncedAt = new Date().toISOString();
+    const meta = {
+      promptRevision: remoteMeta.promptRevision,
+      promptsUpdatedAt: remoteMeta.promptsUpdatedAt || syncedAt,
+      promptCount: validRemoteTemplates.length
+    };
+    await this.writeLocalMeta(meta);
+    return {
+      imported: validRemoteTemplates.length,
+      syncedAt,
+      ...meta
+    };
+  }
+
+  async getPromptConfigMeta(): Promise<PromptConfigMeta> {
+    const remoteMeta = await this.remoteConfigService.getPromptMeta();
+    const localMeta = await this.readLocalMeta();
+    return {
+      promptRevision: remoteMeta.promptRevision,
+      promptsUpdatedAt: remoteMeta.promptsUpdatedAt,
+      promptCount: remoteMeta.promptCount,
+      localPromptRevision: localMeta.promptRevision,
+      localPromptsUpdatedAt: localMeta.promptsUpdatedAt
+    };
   }
 
   async buildPrompt(scenario: PromptScenario, variables: Record<string, unknown>): Promise<string> {
@@ -290,6 +356,29 @@ export class PromptService {
   private async writeTemplates(templates: PromptTemplate[]): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, JSON.stringify(templates, null, 2), 'utf8');
+  }
+
+  private async readLocalMeta(): Promise<PromptConfigMeta> {
+    try {
+      const raw = await readFile(this.metaFilePath, 'utf8');
+      const saved = JSON.parse(raw) as Partial<PromptConfigMeta>;
+      return {
+        promptRevision: Number.isFinite(Number(saved.promptRevision)) ? Number(saved.promptRevision) : 0,
+        promptsUpdatedAt: typeof saved.promptsUpdatedAt === 'string' ? saved.promptsUpdatedAt : '',
+        promptCount: Number.isFinite(Number(saved.promptCount)) ? Number(saved.promptCount) : 0
+      };
+    } catch {
+      return {
+        promptRevision: 0,
+        promptsUpdatedAt: '',
+        promptCount: 0
+      };
+    }
+  }
+
+  private async writeLocalMeta(meta: PromptConfigMeta): Promise<void> {
+    await mkdir(dirname(this.metaFilePath), { recursive: true });
+    await writeFile(this.metaFilePath, JSON.stringify(meta, null, 2), 'utf8');
   }
 
   private defaultTemplates(): PromptTemplate[] {

@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld('electron', {
   saveModel: (input: ModelConfigInput) => ipcRenderer.invoke('save-model', input),
   deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
   checkModel: (input: ModelConfigInput) => ipcRenderer.invoke('check-model', input),
+  generateTodayTopics: (forceRefresh?: boolean) => ipcRenderer.invoke('generate-today-topics', forceRefresh),
+  getPromptConfigMeta: () => ipcRenderer.invoke('get-prompt-config-meta'),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url)

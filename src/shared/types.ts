@@ -16,6 +16,13 @@ export interface VideoTopic {
   references: string[];
 }
 
+export interface TodayVideoTopic {
+  id: string;
+  title: string;
+  coreIdea: string;
+  facts: string[];
+}
+
 export interface ScriptScene {
   scene: number;
   duration: string;
@@ -112,7 +119,7 @@ export interface ArticlePackage {
 }
 
 export interface GenerateScriptRequest {
-  topic: VideoTopic;
+  topic: VideoTopic | TodayVideoTopic;
   duration: number;
   requirements?: string;
 }
@@ -182,6 +189,7 @@ export interface UpdateCheckResult {
 }
 
 export type PromptScenario =
+  | 'video-today-topics'
   | 'video-topic-generate'
   | 'video-script-generate'
   | 'moments-rewrite'
@@ -225,13 +233,25 @@ export interface PromptPreviewResult {
   prompt: string;
 }
 
+export interface PromptConfigMeta {
+  promptRevision: number;
+  promptsUpdatedAt: string;
+  promptCount: number;
+  localPromptRevision?: number;
+  localPromptsUpdatedAt?: string;
+}
+
 export interface PromptSyncResult {
   imported: number;
   syncedAt: string;
+  promptRevision: number;
+  promptsUpdatedAt: string;
+  promptCount: number;
 }
 
 export type ElectronApi = {
   searchHotTopics: (topic: string) => Promise<VideoTopic[]>;
+  generateTodayTopics: (forceRefresh?: boolean) => Promise<TodayVideoTopic[]>;
   generateScript: (data: GenerateScriptRequest) => Promise<VideoScript>;
   exportScript: (script: VideoScript, format: 'txt' | 'md' | 'pdf') => Promise<ExportResult>;
   rewriteMoments: (text: string, style: string) => Promise<MomentsRewriteResult>;
@@ -249,6 +269,7 @@ export type ElectronApi = {
   saveModel: (input: ModelConfigInput) => Promise<ModelConfig>;
   deleteModel: (id: string) => Promise<void>;
   checkModel: (input: ModelConfigInput) => Promise<ModelCheckResult>;
+  getPromptConfigMeta: () => Promise<PromptConfigMeta>;
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
   openExternalUrl: (url: string) => Promise<void>;
