@@ -33,13 +33,13 @@ const DEFAULT_MODEL_INPUT: ModelConfigInput = {
 export function BackendManagerPage(): JSX.Element {
   return (
     <div className="single-column">
+      <UpdatePanel />
       <BackendPromptSyncPanel />
       <Collapse
         ghost
         className="advanced-collapse"
       items={[
-          { key: 'models', label: '高级设置：模型管理', children: <ModelManagerPanel /> },
-          { key: 'updates', label: '高级设置：软件更新', children: <UpdatePanel /> }
+          { key: 'models', label: '高级设置：模型管理', children: <ModelManagerPanel /> }
       ]}
     />
     </div>
@@ -51,41 +51,47 @@ function UpdatePanel(): JSX.Element {
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [error, setError] = useState('');
 
-  async function checkUpdate(): Promise<void> {
+  async function downloadLatestVersion(): Promise<void> {
     setChecking(true);
     setError('');
     try {
       const update = await window.electron.checkForUpdates();
       setResult(update);
-      update.hasUpdate ? message.info('发现新版本') : message.success('当前已经是最新版本');
+      if (!update.downloadUrl) {
+        setError('后台还没有配置安装包下载地址，请先在网页后台“更新及授权”里填写下载地址并保存。');
+        return;
+      }
+      await window.electron.openExternalUrl(update.downloadUrl);
+      if (update.hasUpdate) {
+        message.success(`正在下载最新版本 ${update.latestVersion}`);
+      } else {
+        message.success(`当前已是最新版本 ${update.currentVersion}，已打开安装包下载地址`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '检查更新失败，请稍后重试');
+      setError(err instanceof Error ? err.message : '版本更新失败，请稍后重试');
     } finally {
       setChecking(false);
     }
   }
 
-  async function openDownload(): Promise<void> {
-    if (!result?.downloadUrl) return;
-    await window.electron.openExternalUrl(result.downloadUrl);
-  }
-
   return (
     <div className="single-column">
       {error && <ErrorBanner message={error} />}
-      <Card title="软件更新检查" variant="borderless">
+      <Card title="版本更新" variant="borderless">
         <Space direction="vertical" size={16} className="full-width">
           <div className="model-note">
             <DownloadCloud size={18} />
-            <span>软件会从云端后台读取最新版本、安装包下载地址和更新说明。</span>
+            <span>点击后会连接后台读取最新版本和安装包下载地址，并直接下载最新安装包。</span>
           </div>
           <Space wrap>
-            <Button type="primary" icon={<DownloadCloud size={16} />} loading={checking} onClick={checkUpdate}>
-              检查更新
+            <Button type="primary" icon={<DownloadCloud size={16} />} loading={checking} onClick={downloadLatestVersion}>
+              版本更新
             </Button>
-            <Button icon={<ExternalLink size={15} />} disabled={!result?.downloadUrl} onClick={openDownload}>
-              打开安装包下载
-            </Button>
+            {result?.downloadUrl && (
+              <Button icon={<ExternalLink size={15} />} onClick={() => window.electron.openExternalUrl(result.downloadUrl)}>
+                重新打开下载地址
+              </Button>
+            )}
           </Space>
           {result && (
             <Alert
