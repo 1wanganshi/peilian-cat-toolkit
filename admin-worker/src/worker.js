@@ -6,7 +6,7 @@ const DEFAULT_CONFIG = {
   authorizedUsers: [],
   usageRecords: [],
   update: {
-    latestVersion: '0.1.1',
+    latestVersion: '0.1.3',
     downloadUrl: '',
     releaseNotes: '新增短视频脚本今日选题能力，并优化后台提示词更新流程。',
     force: false,
@@ -23,9 +23,16 @@ const EDITABLE_PROMPT_CATALOG = [
   {
     scenario: 'moments-rewrite',
     name: '\u670b\u53cb\u5708\u6539\u5199',
-    appBinding: 'APP \u7aef AI\u670b\u53cb\u5708 > \u670b\u53cb\u5708\u6539\u5199',
-    description: '\u63a7\u5236\u7528\u6237\u8f93\u5165\u670b\u53cb\u5708\u539f\u6587\u540e\uff0cAI \u5982\u4f55\u6539\u5199\u6210\u81ea\u7136\u771f\u5b9e\u7684\u670b\u53cb\u5708\u6587\u6848\u3002',
+    appBinding: 'APP \u7aef AI\u670b\u53cb\u5708 > \u4eca\u65e5\u670b\u53cb\u5708\u5efa\u8bae / \u670b\u53cb\u5708\u6539\u5199',
+    description: '\u63a7\u5236\u540e\u53f0\u4eca\u65e5\u670b\u53cb\u5708\u539f\u6587\u7684\u4e8c\u521b\uff0c\u4ee5\u53ca\u7528\u6237\u8f93\u5165\u670b\u53cb\u5708\u539f\u6587\u540e\u7684 AI \u6539\u5199\u7ed3\u679c\u3002',
     requiredVariables: ['originalText', 'style']
+  },
+  {
+    scenario: 'moments-generate',
+    name: '\u670b\u53cb\u5708\u751f\u6210',
+    appBinding: 'APP \u7aef AI\u670b\u53cb\u5708 > \u670b\u53cb\u5708\u751f\u6210',
+    description: '\u63a7\u5236\u7528\u6237\u8f93\u5165\u670b\u53cb\u5708\u60f3\u6cd5\u540e\uff0cAI \u5982\u4f55\u751f\u6210\u81ea\u7136\u771f\u5b9e\u7684\u670b\u53cb\u5708\u6587\u6848\u3002',
+    requiredVariables: ['idea', 'style']
   },
   {
     scenario: 'video-script-generate',

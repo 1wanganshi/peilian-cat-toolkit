@@ -26,7 +26,7 @@ test('public config endpoint returns prompts-only defaults', async () => {
   assert.deepEqual(body.prompts, []);
   assert.equal(body.models, undefined);
   assert.equal(body.momentPlans, undefined);
-  assert.equal(body.update.latestVersion, '0.1.1');
+  assert.equal(body.update.latestVersion, '0.1.3');
 });
 
 test('admin writes require username and password', async () => {
@@ -69,6 +69,7 @@ test('admin page uses browser basic auth challenge', async () => {
   assert.doesNotMatch(html, /planList/);
   assert.doesNotMatch(html, /materialUpload/);
   assert.match(html, /moments-rewrite/);
+  assert.match(html, /moments-generate/);
   assert.match(html, /video-script-generate/);
   assert.doesNotMatch(html, /image-generate/);
   assert.doesNotMatch(html, /video-topic-generate/);
@@ -162,7 +163,8 @@ test('admin can update editable prompts and filters built-in prompt scenarios', 
     body: JSON.stringify({
       prompts: [
         { id: 'p1', scenario: 'moments-rewrite', name: '?????', template: 'rewrite {{originalText}}', enabled: true },
-        { id: 'p2', scenario: 'image-generate', name: '?????', template: 'image prompt', enabled: true }
+        { id: 'p2', scenario: 'moments-generate', name: 'generate', template: 'generate {{idea}}', enabled: true },
+        { id: 'p3', scenario: 'image-generate', name: '?????', template: 'image prompt', enabled: true }
       ],
       models: [{ id: 'm1', kind: 'language', apiKey: 'sk-secret' }],
       update: { latestVersion: '0.2.0', downloadUrl: 'https://example.com/app.exe', releaseNotes: '??', force: false }
@@ -180,9 +182,11 @@ test('admin can update editable prompts and filters built-in prompt scenarios', 
   const publicBody = await publicResponse.json();
   assert.equal(publicBody.models, undefined);
   assert.equal(publicBody.momentPlans, undefined);
-  assert.equal(publicBody.prompts.length, 1);
+  assert.equal(publicBody.prompts.length, 2);
   assert.equal(publicBody.prompts[0].scenario, 'moments-rewrite');
   assert.equal(publicBody.prompts[0].name, '?????');
+  assert.equal(publicBody.prompts[1].scenario, 'moments-generate');
+  assert.equal(publicBody.prompts[1].name, 'generate');
   assert.equal(publicBody.update.latestVersion, '0.2.0');
 });
 

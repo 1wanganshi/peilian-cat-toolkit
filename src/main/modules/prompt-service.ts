@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path';
 import type { PromptConfigMeta, PromptScenario, PromptSyncResult, PromptTemplate } from '../../shared/types';
 import { RemoteConfigService } from './remote-config-service';
 
-const REMOTE_EDITABLE_SCENARIOS = new Set<PromptScenario>(['moments-rewrite', 'video-script-generate']);
+const REMOTE_EDITABLE_SCENARIOS = new Set<PromptScenario>([
+  'moments-rewrite',
+  'moments-generate',
+  'video-script-generate'
+]);
 
 const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> = [
   {

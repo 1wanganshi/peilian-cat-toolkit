@@ -292,10 +292,14 @@ export class AiService {
   }
 
   async generateTodayMomentSuggestion(rawContent: string): Promise<Pick<TodayMomentSuggestionResult, 'rewriteContent'>> {
-    const generated = await this.generateJsonWithLanguageModel<{ rewriteContent?: string }>(
-      await this.promptService.buildPrompt('moments-today-suggestion', { rawContent })
+    const generated = await this.generateJsonWithLanguageModel<{ rewriteContent?: string; results?: Array<{ text?: string }> }>(
+      await this.promptService.buildPrompt('moments-rewrite', {
+        originalText: rawContent,
+        style: '\u4eca\u65e5\u670b\u53cb\u5708\u5efa\u8bae'
+      })
     );
-    const rewriteContent = generated?.rewriteContent?.trim();
+    const rewriteContent = generated?.rewriteContent?.trim() ||
+      generated?.results?.map((item) => item.text?.trim()).find(Boolean);
     if (rewriteContent) return { rewriteContent };
 
     return {
