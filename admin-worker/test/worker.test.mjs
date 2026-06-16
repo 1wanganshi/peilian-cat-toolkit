@@ -106,6 +106,11 @@ test('admin page uses browser basic auth challenge', async () => {
   assert.match(html, /moments-rewrite/);
   assert.match(html, /moments-generate/);
   assert.match(html, /video-script-generate/);
+  assert.match(html, /withButtonFeedback/);
+  assert.match(html, /提示词已保存并发布/);
+  assert.match(html, /当前提示词已保存到待发布/);
+  assert.match(html, /is-loading/);
+  assert.match(html, /status-pop/);
   assert.doesNotMatch(html, /image-generate/);
   assert.doesNotMatch(html, /video-topic-generate/);
   assert.doesNotMatch(html, /id="username"/);

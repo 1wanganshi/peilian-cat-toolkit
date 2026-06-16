@@ -1213,10 +1213,14 @@ function renderAdminLandingHtml(publicBaseUrl) {
     .muted { color: #68726f; font-size: 13px; line-height: 1.6; }
     .header-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
     .nav-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
-    button, .button { border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 800; cursor: pointer; background: #e8efe9; color: #25453e; text-decoration: none; }
+    button, .button { border: 0; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 800; cursor: pointer; background: #e8efe9; color: #25453e; text-decoration: none; transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, opacity .18s ease; }
+    button:hover, .button:hover { transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .78; transform: none; }
     button.primary { background: #2e7869; color: #fff; }
     button.danger { background: #b85045; color: #fff; }
     button.active { background: #2e7869; color: #fff; }
+    button.is-loading::after { content: ""; display: inline-block; width: 13px; height: 13px; margin-left: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: spin .75s linear infinite; }
+    button.is-saved { background: #1f8a63; color: #fff; animation: savedPulse .7s ease; box-shadow: 0 0 0 4px rgba(46, 120, 105, .16); }
     input, textarea, select { width: 100%; border: 1px solid #cfc6b8; border-radius: 6px; padding: 10px 11px; font: inherit; background: #fff; }
     textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
     label { display: grid; gap: 6px; font-weight: 700; font-size: 13px; }
@@ -1225,7 +1229,8 @@ function renderAdminLandingHtml(publicBaseUrl) {
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .status { min-height: 24px; color: #2e7869; font-weight: 800; }
+    .status { min-height: 24px; color: #2e7869; font-weight: 800; transition: transform .18s ease, opacity .18s ease; }
+    .status.status-pop { animation: statusPop .5s ease; }
     .list { display: grid; gap: 10px; }
     .card { border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
     .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -1241,6 +1246,9 @@ function renderAdminLandingHtml(publicBaseUrl) {
     .prompt-item.active { border-color: #2e7869; background: #f5fbf7; color: #1f6658; }
     .readonly-field { border: 1px solid #e0d7c8; border-radius: 6px; background: #f8f5ee; padding: 10px 11px; color: #40504d; line-height: 1.55; }
     iframe { width: 100%; height: 76vh; border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes savedPulse { 0% { transform: scale(.98); } 45% { transform: scale(1.03); } 100% { transform: scale(1); } }
+    @keyframes statusPop { 0% { opacity: .35; transform: translateY(-4px); } 100% { opacity: 1; transform: translateY(0); } }
     @media (max-width: 980px) { .grid2, .grid3, .usage-grid, .usage-line, .prompt-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -1365,8 +1373,42 @@ function renderAdminLandingHtml(publicBaseUrl) {
     const $ = (id) => document.getElementById(id);
 
     function setStatus(text, danger) {
-      $("status").textContent = text;
-      $("status").style.color = danger ? "#b85045" : "#2e7869";
+      const status = $("status");
+      status.textContent = text;
+      status.style.color = danger ? "#b85045" : "#2e7869";
+      status.classList.remove("status-pop");
+      void status.offsetWidth;
+      status.classList.add("status-pop");
+    }
+    async function withButtonFeedback(button, loadingText, successText, task) {
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.classList.remove("is-saved");
+      button.classList.add("is-loading");
+      button.textContent = loadingText;
+      try {
+        const result = await task();
+        if (result === false) {
+          button.classList.remove("is-loading");
+          button.disabled = false;
+          button.textContent = originalText;
+          return result;
+        }
+        button.classList.remove("is-loading");
+        button.classList.add("is-saved");
+        button.textContent = successText;
+        window.setTimeout(() => {
+          button.classList.remove("is-saved");
+          button.disabled = false;
+          button.textContent = originalText;
+        }, 1200);
+        return result;
+      } catch (error) {
+        button.classList.remove("is-loading");
+        button.disabled = false;
+        button.textContent = originalText;
+        throw error;
+      }
     }
     async function loadConfig() {
       const res = await fetch(api + "/api/admin/config", { headers: { "content-type": "application/json" } });
@@ -1454,13 +1496,20 @@ function renderAdminLandingHtml(publicBaseUrl) {
     }
     function keepPrompt() {
       const item = state.prompts.find((entry) => entry.id === editingPromptId);
-      if (!item) return setStatus("请先选择要编辑的提示词", true);
+      if (!item) {
+        setStatus("请先选择要编辑的提示词", true);
+        return false;
+      }
       item.template = $("promptTemplate").value.trim();
       item.updatedAt = new Date().toISOString();
-      if (!item.template) return setStatus("提示词正文不能为空；如果不想维护，请点清空当前提示词", true);
+      if (!item.template) {
+        setStatus("提示词正文不能为空；如果不想维护，请点清空当前提示词", true);
+        return false;
+      }
       renderPrompts();
       fillPromptEditor();
-      setStatus("提示词已加入待发布，点击保存提示词后生效");
+      setStatus("当前提示词已保存到待发布，点击保存提示词后生效");
+      return true;
     }
     function clearPrompt() {
       const item = state.prompts.find((entry) => entry.id === editingPromptId);
@@ -1541,6 +1590,15 @@ function renderAdminLandingHtml(publicBaseUrl) {
     document.body.addEventListener("click", (event) => {
       const target = event.target.closest("button");
       if (!target) return;
+      if (target.id === "savePrompts") {
+        withButtonFeedback(target, "保存中", "已保存", () => saveConfig("提示词已保存并发布"))
+          .catch((error) => setStatus("保存失败：" + error.message, true));
+        return;
+      }
+      if (target.id === "keepPrompt") {
+        withButtonFeedback(target, "保存中", "已保存", () => keepPrompt());
+        return;
+      }
       if (target.dataset.tab) switchTab(target.dataset.tab);
       if (target.id === "reloadTop" || target.id === "reloadUsage" || target.id === "reloadPrompts") loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
       if (target.id === "saveUpdate") saveUpdateToState().catch((error) => setStatus("保存失败：" + error.message, true));
