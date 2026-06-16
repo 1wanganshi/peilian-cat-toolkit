@@ -1,7 +1,10 @@
 import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
+import { createWriteStream } from 'node:fs';
+import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { config } from 'dotenv';
-import type { ArticleGenerationProgress, HistoryCreateInput } from '../shared/types';
+import type { ArticleGenerationProgress, HistoryCreateInput, UpdateDownloadResult } from '../shared/types';
 import { ArticlePublisher } from './modules/article-publisher';
 import { AuthService } from './modules/auth-service';
 import { ExportService } from './modules/export-service';
@@ -100,6 +103,50 @@ function titleFromTopic(topic: unknown): string {
 
 async function authorizeAndTrack(module: string, action: string, summary = ''): Promise<void> {
   await authService.recordUsage({ module, action, summary });
+}
+
+function sanitizeFileSegment(value: string): string {
+  return value.replace(/[^\w.-]+/gu, '-').replace(/-+/gu, '-').replace(/^-|-$/gu, '') || 'latest';
+}
+
+async function downloadLatestUpdateInstaller(): Promise<UpdateDownloadResult> {
+  const update = await remoteConfigService.checkUpdate(app.getVersion());
+  if (!update.downloadUrl) {
+    throw new Error('后台还没有配置安装包下载地址，请先在网页后台“更新及授权”里填写下载地址并保存。');
+  }
+
+  const target = new URL(update.downloadUrl);
+  if (!['http:', 'https:'].includes(target.protocol)) {
+    throw new Error('安装包下载地址必须是 http/https 链接');
+  }
+  if (!/\.exe(?:$|[?#])/iu.test(target.pathname)) {
+    throw new Error('安装包下载地址必须指向 Windows .exe 安装程序');
+  }
+
+  const downloadsDir = app.getPath('downloads');
+  await mkdir(downloadsDir, { recursive: true });
+  const filePath = join(downloadsDir, `PeilianCat-Setup-${sanitizeFileSegment(update.latestVersion)}.exe`);
+  const response = await fetch(target);
+  if (!response.ok || !response.body) {
+    throw new Error(`下载安装包失败：HTTP ${response.status}`);
+  }
+
+  try {
+    await pipeline(response.body, createWriteStream(filePath));
+  } catch (error) {
+    await unlink(filePath).catch(() => undefined);
+    throw error;
+  }
+
+  await shell.openPath(filePath);
+  return {
+    ...update,
+    downloaded: true,
+    filePath,
+    message: update.hasUpdate
+      ? `最新版本 ${update.latestVersion} 已下载，安装程序已打开。`
+      : `当前已是最新版本 ${update.currentVersion}，安装程序已重新下载并打开。`
+  };
 }
 
 app.whenReady().then(() => {
@@ -270,6 +317,7 @@ function registerHandlers(): void {
   ipcMain.handle('get-prompt-config-meta', async () => promptService.getPromptConfigMeta());
   ipcMain.handle('sync-prompt-templates-from-backend', async () => promptService.syncRemoteTemplates());
   ipcMain.handle('check-for-updates', async () => remoteConfigService.checkUpdate(app.getVersion()));
+  ipcMain.handle('download-latest-update', async () => downloadLatestUpdateInstaller());
   ipcMain.handle('list-history', async (_event, query) => historyService.listHistory(query));
   ipcMain.handle('delete-history', async (_event, id: string) => historyService.deleteHistory(id));
   ipcMain.handle('clear-history', async () => historyService.clearHistory());

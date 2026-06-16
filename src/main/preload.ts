@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electron', {
   getPromptConfigMeta: () => ipcRenderer.invoke('get-prompt-config-meta'),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadLatestUpdate: () => ipcRenderer.invoke('download-latest-update'),
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   getAuthSession: () => ipcRenderer.invoke('get-auth-session'),
   loginWithPhone: (phone: string) => ipcRenderer.invoke('login-with-phone', phone),

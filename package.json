@@ -1,6 +1,6 @@
 {
   "name": "peilian-cat-toolkit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "陪练猫工具包 desktop app",
   "main": "out/main/main.js",
   "author": "Peilian Cat",

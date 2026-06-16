@@ -235,6 +235,12 @@ export interface UpdateCheckResult {
   publishedAt?: string;
 }
 
+export interface UpdateDownloadResult extends UpdateCheckResult {
+  downloaded: boolean;
+  filePath?: string;
+  message: string;
+}
+
 export type PromptScenario =
   | 'video-today-topics'
   | 'video-topic-generate'
@@ -386,6 +392,7 @@ export type ElectronApi = {
   getPromptConfigMeta: () => Promise<PromptConfigMeta>;
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
+  downloadLatestUpdate: () => Promise<UpdateDownloadResult>;
   openExternalUrl: (url: string) => Promise<void>;
   getAuthSession: () => Promise<UserAuthSession | undefined>;
   loginWithPhone: (phone: string) => Promise<UserLoginResult>;

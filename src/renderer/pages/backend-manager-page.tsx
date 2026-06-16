@@ -1,14 +1,14 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Select, Space, Switch, Tag, message } from 'antd';
-import { CheckCircle2, DownloadCloud, ExternalLink, PlugZap, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { CheckCircle2, DownloadCloud, PlugZap, RefreshCw, Save, Trash2 } from 'lucide-react';
 import type {
   ModelConfig,
   ModelConfigInput,
   ModelKind,
   ModelProvider,
   PromptConfigMeta,
-  UpdateCheckResult
+  UpdateDownloadResult
 } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
 import { ErrorBanner } from '../components/error-banner';
@@ -48,25 +48,16 @@ export function BackendManagerPage(): JSX.Element {
 
 function UpdatePanel(): JSX.Element {
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<UpdateCheckResult | null>(null);
+  const [result, setResult] = useState<UpdateDownloadResult | null>(null);
   const [error, setError] = useState('');
 
   async function downloadLatestVersion(): Promise<void> {
     setChecking(true);
     setError('');
     try {
-      const update = await window.electron.checkForUpdates();
+      const update = await window.electron.downloadLatestUpdate();
       setResult(update);
-      if (!update.downloadUrl) {
-        setError('后台还没有配置安装包下载地址，请先在网页后台“更新及授权”里填写下载地址并保存。');
-        return;
-      }
-      await window.electron.openExternalUrl(update.downloadUrl);
-      if (update.hasUpdate) {
-        message.success(`正在下载最新版本 ${update.latestVersion}`);
-      } else {
-        message.success(`当前已是最新版本 ${update.currentVersion}，已打开安装包下载地址`);
-      }
+      message.success(update.message);
     } catch (err) {
       setError(err instanceof Error ? err.message : '版本更新失败，请稍后重试');
     } finally {
@@ -81,17 +72,12 @@ function UpdatePanel(): JSX.Element {
         <Space direction="vertical" size={16} className="full-width">
           <div className="model-note">
             <DownloadCloud size={18} />
-            <span>点击后会连接后台读取最新版本和安装包下载地址，并直接下载最新安装包。</span>
+            <span>点击后会连接后台读取最新版本，在软件内下载最新安装包，下载完成后自动打开安装程序。</span>
           </div>
           <Space wrap>
             <Button type="primary" icon={<DownloadCloud size={16} />} loading={checking} onClick={downloadLatestVersion}>
-              版本更新
+              {checking ? '正在下载更新' : '版本更新'}
             </Button>
-            {result?.downloadUrl && (
-              <Button icon={<ExternalLink size={15} />} onClick={() => window.electron.openExternalUrl(result.downloadUrl)}>
-                重新打开下载地址
-              </Button>
-            )}
           </Space>
           {result && (
             <Alert
@@ -104,7 +90,7 @@ function UpdatePanel(): JSX.Element {
                   <p>最新版本：{result.latestVersion}</p>
                   {result.force && <p>本次更新被后台标记为强制更新。</p>}
                   {result.releaseNotes && <p>{result.releaseNotes}</p>}
-                  {result.downloadUrl && <p>{result.downloadUrl}</p>}
+                  {result.filePath && <p>安装包位置：{result.filePath}</p>}
                 </div>
               }
             />

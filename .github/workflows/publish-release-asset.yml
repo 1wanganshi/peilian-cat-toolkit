@@ -36,22 +36,22 @@ jobs:
       - name: Normalize asset name
         shell: pwsh
         run: |
-          $installer = Get-ChildItem -Path release -Filter "*Setup 0.1.4.exe" | Select-Object -First 1
-          if (-not $installer) { throw "Installer for 0.1.4 was not found" }
-          Copy-Item -LiteralPath $installer.FullName -Destination "release\Setup.0.1.4.exe" -Force
+          $installer = Get-ChildItem -Path release -Filter "*Setup 0.1.5.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Installer for 0.1.5 was not found" }
+          Copy-Item -LiteralPath $installer.FullName -Destination "release\Setup.0.1.5.exe" -Force
 
       - name: Create release if missing
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v0.1.4 2>$null
+          gh release view v0.1.5 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create v0.1.4 --target main --title "Peilian Cat Toolkit v0.1.4" --notes "Add one-click version update download from the backend update configuration."
+            gh release create v0.1.5 --target main --title "Peilian Cat Toolkit v0.1.5" --notes "Download the latest installer inside the app and launch it after download, without opening an external download page."
           }
 
-      - name: Upload installer to v0.1.4
+      - name: Upload installer to v0.1.5
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v0.1.4 "release\Setup.0.1.4.exe" --clobber
+        run: gh release upload v0.1.5 "release\Setup.0.1.5.exe" --clobber

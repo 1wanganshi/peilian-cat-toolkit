@@ -26,7 +26,7 @@ test('public config endpoint returns prompts-only defaults', async () => {
   assert.deepEqual(body.prompts, []);
   assert.equal(body.models, undefined);
   assert.equal(body.momentPlans, undefined);
-  assert.equal(body.update.latestVersion, '0.1.4');
+  assert.equal(body.update.latestVersion, '0.1.5');
 });
 
 test('admin writes require username and password', async () => {

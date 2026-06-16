@@ -6,7 +6,7 @@ const DEFAULT_CONFIG = {
   authorizedUsers: [],
   usageRecords: [],
   update: {
-    latestVersion: '0.1.4',
+    latestVersion: '0.1.5',
     downloadUrl: '',
     releaseNotes: '新增短视频脚本今日选题能力，并优化后台提示词更新流程。',
     force: false,
