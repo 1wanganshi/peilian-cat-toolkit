@@ -35,8 +35,7 @@ try {
     const languageEnabled = models.some((model) => model.kind === 'language' && model.enabled);
     const imageEnabled = models.some((model) => model.kind === 'image' && model.enabled);
     const texts = await window.electron.generateMomentTexts({
-      idea: inputIdea,
-      style: '日常真实风'
+      idea: inputIdea
     });
     const image = await window.electron.generateMomentImage({
       selectedText: texts.results[0].text
@@ -51,7 +50,7 @@ try {
   assert.ok(result.texts.results.length >= 3, `expected 3 texts, got ${result.texts.results.length}`);
   assert.ok(result.texts.results.every((item) => item.text.length >= 5), 'one or more generated texts are too short');
   assert.equal(result.image.type, 'image');
-  assert.equal(result.image.hasReferenceImage, false);
+  assert.equal(result.image.hasReferenceImage, true);
   assert.ok(result.image.imagePrompt.length >= 20, 'image prompt too short');
   assert.ok(result.image.imageUrl.length >= 20, 'image output too short');
 

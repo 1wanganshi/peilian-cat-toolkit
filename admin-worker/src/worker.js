@@ -2,11 +2,11 @@ const CONFIG_KEY = 'app:config';
 const CONFIG_BACKUP_LATEST_KEY = 'app:config:backup:latest';
 const CONFIG_BACKUP_PREFIX = 'app:config:backup:';
 const CURRENT_APP_RELEASE = {
-  latestVersion: '0.1.6',
-  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.6/Setup.0.1.6.exe',
-  releaseNotes: '新增 APP 端检查更新和立刻更新按钮；立刻更新会在软件内下载安装包并打开安装程序，不再跳转网页。',
+  latestVersion: '0.1.7',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.7/Setup.0.1.7.exe',
+  releaseNotes: '修复朋友圈生成未正确执行后台提示词的问题；朋友圈生成固定先出 3 条三段式文案，再根据文案和陪练猫固定场景库生成 AI 配图。',
   force: false,
-  publishedAt: '2026-06-16T11:51:49.674Z'
+  publishedAt: '2026-06-17T03:35:00.000Z'
 };
 
 const DEFAULT_CONFIG = {

@@ -17,7 +17,6 @@ import { EmptyState } from '../components/empty-state';
 import { ErrorBanner } from '../components/error-banner';
 
 const rewriteStyles = ['日常真实风', '轻松幽默风', '温柔治愈风', '高级简短风', '朋友聊天风'];
-const generateStyles = [...rewriteStyles, '情绪感悟风', '带货种草风'];
 
 type ReferenceImage = {
   name: string;
@@ -35,7 +34,6 @@ export function MomentsPage(): JSX.Element {
   const [rewriteStyle, setRewriteStyle] = useState(rewriteStyles[0]);
   const [rewrite, setRewrite] = useState<MomentsRewriteResult | null>(null);
   const [idea, setIdea] = useState('');
-  const [generateStyle, setGenerateStyle] = useState(generateStyles[0]);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [referenceImage, setReferenceImage] = useState<ReferenceImage | null>(null);
   const [generated, setGenerated] = useState<MomentsGenerateTextResult | null>(null);
@@ -77,7 +75,6 @@ export function MomentsPage(): JSX.Element {
       } else {
         setGenerated(momentResult);
         setIdea(momentResult.idea);
-        setGenerateStyle(momentResult.style);
         setSelectedText(momentResult.results[0]?.text ?? '');
         setMomentImage(null);
         setActiveTab('generate');
@@ -95,7 +92,7 @@ export function MomentsPage(): JSX.Element {
       setGenerated({
         type: 'generate',
         idea: String(content?.request?.idea ?? ''),
-        style: String(content?.request?.style ?? generateStyle),
+        style: String(content?.request?.style ?? ''),
         results: [{ index: 1, text: imageResult.text ?? imageResult.selectedText ?? '' }]
       });
       setActiveTab('generate');
@@ -112,7 +109,7 @@ export function MomentsPage(): JSX.Element {
       message.success('已使用历史今日朋友圈');
       navigate(location.pathname, { replace: true, state: null });
     }
-  }, [generateStyle, location.pathname, location.state, navigate]);
+  }, [location.pathname, location.state, navigate]);
 
   async function rewriteMoments(): Promise<void> {
     if (!originalText.trim()) {
@@ -138,7 +135,7 @@ export function MomentsPage(): JSX.Element {
     setLoading('texts');
     setError('');
     try {
-      const result = await window.electron.generateMomentTexts({ idea, style: generateStyle });
+      const result = await window.electron.generateMomentTexts({ idea });
       setGenerated(result);
       setSelectedText(result.results[0]?.text ?? '');
       setMomentImage(null);
@@ -147,6 +144,32 @@ export function MomentsPage(): JSX.Element {
       setError(err instanceof Error ? err.message : '生成失败了，可以再试一次');
       return undefined;
     } finally {
+      setLoading('');
+    }
+  }
+
+  async function generateTextsThenImage(): Promise<void> {
+    if (!idea.trim()) {
+      setError('请输入你的朋友圈想法');
+      return;
+    }
+    setLoading('texts');
+    setError('');
+    try {
+      const result = await window.electron.generateMomentTexts({ idea });
+      const nextText = result.results[0]?.text ?? '';
+      setGenerated(result);
+      setSelectedText(nextText);
+      setMomentImage(null);
+      setLoading('image');
+
+      if (nextText) {
+        await generateImage(nextText);
+      } else {
+        setLoading('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败了，可以再试一次');
       setLoading('');
     }
   }
@@ -172,33 +195,7 @@ export function MomentsPage(): JSX.Element {
   }
 
   async function generateAll(): Promise<void> {
-    if (!idea.trim()) {
-      setError('请输入你的朋友圈想法');
-      return;
-    }
-    setLoading('all');
-    setError('');
-    try {
-      const result = await window.electron.generateMomentsWithImage({
-        idea,
-        style: generateStyle,
-        referenceImage: referenceImage?.base64,
-        referenceImageName: referenceImage?.name
-      });
-      const textResult: MomentsGenerateTextResult = {
-        type: 'generate',
-        idea,
-        style: generateStyle,
-        results: [{ index: 1, text: result.text }]
-      };
-      setGenerated(textResult);
-      setSelectedText(result.text);
-      setMomentImage(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败了，可以再试一次');
-    } finally {
-      setLoading('');
-    }
+    await generateTextsThenImage();
   }
 
   async function generateTodaySuggestion(): Promise<void> {
@@ -371,11 +368,6 @@ export function MomentsPage(): JSX.Element {
                       placeholder="例如：今天终于把拖了很久的事做完了"
                       onChange={(event) => setIdea(event.target.value)}
                     />
-                    <Radio.Group
-                      value={generateStyle}
-                      onChange={(event) => setGenerateStyle(event.target.value)}
-                      options={generateStyles.map((style) => ({ label: style, value: style }))}
-                    />
                     <Upload
                       listType="picture-card"
                       beforeUpload={handleUpload}
@@ -390,14 +382,17 @@ export function MomentsPage(): JSX.Element {
                     >
                       <UploadCloud size={22} />
                     </Upload>
+                    <div className="reference-note">
+                      系统会固定参考陪练猫设备图；这里可再上传 1 张用户参考图。
+                    </div>
                     <Space wrap>
-                      <Button type="primary" loading={loading === 'all'} icon={<Sparkles size={16} />} onClick={generateAll}>
+                      <Button type="primary" loading={loading === 'texts'} icon={<Sparkles size={16} />} onClick={generateAll}>
                         生成朋友圈
                       </Button>
                       <Button loading={loading === 'image'} icon={<ImagePlus size={15} />} onClick={() => generateImage()}>
                         生成配图
                       </Button>
-                      <Button loading={loading === 'all'} icon={<RefreshCw size={15} />} onClick={generateAll}>
+                      <Button loading={loading === 'texts' || loading === 'image'} icon={<RefreshCw size={15} />} onClick={generateAll}>
                         重新生成全部
                       </Button>
                     </Space>
@@ -433,7 +428,17 @@ export function MomentsPage(): JSX.Element {
                         </Button>
                       </Space>
 
-                      {momentImage ? (
+                      {loading === 'image' ? (
+                        <div className="moment-image-loading">
+                          <div className="image-carousel-loader" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                          <strong>图片正在生成</strong>
+                          <p>正在根据选中的朋友圈文案、固定陪练猫设备图和用户参考图生成真实随手拍风格配图。</p>
+                        </div>
+                      ) : momentImage ? (
                         <div className="moment-image-result">
                           <Image src={`data:image/${inferImageType(momentImage.imageUrl)};base64,${momentImage.imageUrl}`} alt="朋友圈配图" />
                           <Button icon={<Download size={15} />} onClick={downloadGeneratedImage}>下载图片</Button>

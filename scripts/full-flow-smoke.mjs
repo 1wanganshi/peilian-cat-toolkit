@@ -19,10 +19,92 @@ const server = createServer(async (request, response) => {
   }
   const body = Buffer.concat(chunks).toString('utf8');
   response.setHeader('Content-Type', 'application/json');
+  if (request.url === '/api/auth/check' && request.method === 'POST') {
+    response.end(JSON.stringify({
+      phone: '13800138000',
+      authorized: true,
+      message: 'ok',
+      user: {
+        id: 'mock-user',
+        phone: '13800138000',
+        name: 'Mock User',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    }));
+    return;
+  }
+  if (request.url === '/api/usage/record' && request.method === 'POST') {
+    response.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (request.url === '/api/config' && request.method === 'GET') {
+    response.end(JSON.stringify({
+      prompts: [],
+      update: {
+        latestVersion: '0.1.7',
+        downloadUrl: '',
+        releaseNotes: '',
+        force: false
+      },
+      meta: {
+        promptRevision: 0,
+        promptsUpdatedAt: '',
+        promptCount: 0
+      }
+    }));
+    return;
+  }
   if (request.url === '/v1/chat/completions') {
     const parsed = JSON.parse(body || '{}');
     const prompt = parsed.messages?.[0]?.content ?? '';
     chatCalls += 1;
+    if (prompt.includes('APP 本次固定执行要求') && prompt.includes('本次必须一次生成 3 条')) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: [
+          '孩子主动练琴这件事，今天有点不一样',
+          '',
+          '今天孩子自己坐到琴凳上的时候，我其实愣了一下。没有催，也没有讲道理，就那么安安静静地把谱子翻开了。',
+          '',
+          '前面那些拖拉、磨蹭、讲条件，好像突然松了一点。弹得不算多完美，中间也停了几次，但那种“我自己来”的劲儿，比弹对几个音更让我开心。',
+          '',
+          '有些进步不大声，但看见的时候，心里真的会亮一下。',
+          '',
+          '---',
+          '',
+          '不用催的一次练琴',
+          '',
+          '今天最让我意外的，不是孩子弹得有多好，是他自己去练了。',
+          '',
+          '以前一到练琴，家里空气都能紧起来。今天他拿着谱子坐下去，虽然还是会卡，还是会回头看我，但那一刻我突然觉得，很多事可能真的不是白坚持。',
+          '',
+          '小孩的变化，有时候就是这么一点点冒出来的。',
+          '',
+          '---',
+          '',
+          '今天的小进步，想记一下',
+          '',
+          '孩子今天主动练琴了。',
+          '',
+          '就这么一件小事，说出来好像没什么，但放在每天陪练、提醒、忍住不发火的日子里，就挺珍贵的。不是一下子变自律了，只是他愿意先迈过去一点。',
+          '',
+          '这种小瞬间，够我开心一会儿了。'
+        ].join('\n') } }]
+      }));
+      return;
+    }
+    if (prompt.includes('最终用于 image2') || (prompt.includes('陪练猫固定生图设定') && prompt.includes('固定场景库'))) {
+      response.end(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          type: 'image',
+          selectedText: '孩子主动练琴这件事，今天有点不一样',
+          hasReferenceImage: true,
+          imagePrompt: '选择客厅大屏英语启蒙场景：温馨明亮的家庭客厅里，孩子手持陪练猫儿童话筒，与电视大屏上的 AI 卡通老师和英文跟读提示互动，白色陪练猫主机自然放在电视柜上，手机随手拍风格，自然光，1:1，可以有少量英文学习 UI，不要广告海报、logo、水印。'
+        }) } }]
+      }));
+      return;
+    }
     if (prompt.includes('今日选题') && prompt.includes('联网搜索结果')) {
       response.end(JSON.stringify({
         choices: [{ message: { content: JSON.stringify({
@@ -144,7 +226,7 @@ const server = createServer(async (request, response) => {
         choices: [{ message: { content: JSON.stringify({
           type: 'image',
           selectedText: '今天孩子主动练琴了，没有催，心里有点小开心。',
-          hasReferenceImage: false,
+          hasReferenceImage: true,
           imagePrompt: '真实生活感的家庭练琴场景，柔和自然光，比例 1:1，不要文字 logo 水印'
         }) } }]
       }));
@@ -216,6 +298,12 @@ const server = createServer(async (request, response) => {
     }));
     return;
   }
+  if (request.url === '/v1/images/edits') {
+    response.end(JSON.stringify({
+      data: [{ b64_json: Buffer.from('<svg><rect width="10" height="10"/></svg>').toString('base64') }]
+    }));
+    return;
+  }
   if (request.url?.startsWith('/v1/models/')) {
     response.end(JSON.stringify({ id: 'mock-model' }));
     return;
@@ -226,6 +314,7 @@ const server = createServer(async (request, response) => {
 
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
 const { port } = server.address();
+const backendUrl = `http://127.0.0.1:${port}`;
 const baseUrl = `http://127.0.0.1:${port}/v1`;
 const userDataDir = await mkdtemp(join(tmpdir(), 'peilian-full-flow-'));
 
@@ -242,6 +331,7 @@ try {
       PEILIAN_CAT_USER_DATA: userDataDir,
       PEILIAN_MOCK_SEARCH: '1',
       PEILIAN_ALLOW_MOCK_SEARCH: '1',
+      PEILIAN_REMOTE_CONFIG_URL: backendUrl,
       PEILIAN_DISABLE_GPU: '1',
       ELECTRON_RENDERER_URL: ''
     }
@@ -251,6 +341,10 @@ try {
 
   const result = await page.evaluate(async (url) => {
     const api = window.electron;
+    const login = await api.loginWithPhone('13800138000');
+    if (!login.authorized) {
+      throw new Error(login.message || 'mock login failed');
+    }
     await api.saveModel({
       name: 'Mock Language',
       kind: 'language',
@@ -274,7 +368,7 @@ try {
     const todayTopics = await api.generateTodayTopics(true);
     const script = await api.generateScript({ topic: todayTopics[0], duration: 30, requirements: '口播风格' });
     const rewrite = await api.rewriteMoments('今天孩子主动练琴了', '日常真实风');
-    const momentTexts = await api.generateMomentTexts({ idea: '孩子主动练琴', style: '真诚走心' });
+    const momentTexts = await api.generateMomentTexts({ idea: '孩子主动练琴' });
     const momentImage = await api.generateMomentImage({ selectedText: momentTexts.results[0].text });
     const article = await api.generateArticle('孩子英语启蒙的5个方法');
     const regeneratedImage = await api.regenerateArticleImage(article.cards[0]);

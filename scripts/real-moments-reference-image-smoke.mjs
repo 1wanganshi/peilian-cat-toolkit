@@ -32,21 +32,25 @@ try {
 
   const page = await waitForUsableWindow(app);
   const result = await page.evaluate(async ({ inputIdea, inputReferenceImage }) => {
-    return window.electron.generateMomentsWithImage({
-      idea: inputIdea,
-      style: '日常真实风',
+    const texts = await window.electron.generateMomentTexts({
+      idea: inputIdea
+    });
+    const selectedText = texts.results[0]?.text ?? inputIdea;
+    const image = await window.electron.generateMomentImage({
+      selectedText,
       referenceImage: inputReferenceImage,
       referenceImageName: 'peilian-cat-icon.png'
     });
+    return { texts, selectedText, image };
   }, { inputIdea: idea, inputReferenceImage: referenceImage });
 
-  assert.equal(result.type, 'image');
-  assert.equal(result.hasReferenceImage, true);
-  assert.ok(result.text.length >= 5, 'generated text too short');
-  assert.ok(result.imagePrompt.includes('参考') || result.imagePrompt.length >= 80, 'image prompt did not account for reference image');
-  assert.ok(result.imageUrl.length >= 20, 'image output too short');
+  assert.equal(result.image.type, 'image');
+  assert.equal(result.image.hasReferenceImage, true);
+  assert.ok(result.selectedText.length >= 5, 'generated text too short');
+  assert.ok(result.image.imagePrompt.includes('参考') || result.image.imagePrompt.length >= 80, 'image prompt did not account for reference image');
+  assert.ok(result.image.imageUrl.length >= 20, 'image output too short');
 
-  const isSvgFallback = Buffer.from(result.imageUrl.slice(0, 80), 'base64')
+  const isSvgFallback = Buffer.from(result.image.imageUrl.slice(0, 80), 'base64')
     .toString('utf8')
     .trimStart()
     .startsWith('<svg');
@@ -54,10 +58,10 @@ try {
 
   console.log('real moments reference image smoke passed');
   console.log(JSON.stringify({
-    textChars: result.text.length,
-    hasReferenceImage: result.hasReferenceImage,
-    imagePromptChars: result.imagePrompt.length,
-    imageChars: result.imageUrl.length,
+    textChars: result.selectedText.length,
+    hasReferenceImage: result.image.hasReferenceImage,
+    imagePromptChars: result.image.imagePrompt.length,
+    imageChars: result.image.imageUrl.length,
     isSvgFallback
   }, null, 2));
 } finally {

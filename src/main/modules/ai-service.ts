@@ -14,6 +14,23 @@ import { buildApiUrl, buildOpenAiCompatibleBaseUrls } from './api-url';
 import { ModelManager } from './model-manager';
 import { PromptService } from './prompt-service';
 
+export const PEILIAN_MOMENT_IMAGE_SCENE_GUIDE = `陪练猫固定生图设定：
+陪练猫是一款家庭英语启蒙互动设备，由白色便携主机和儿童话筒组成，连接电视、显示器或投影使用。孩子手持话筒，对着大屏里的 AI 老师、卡通角色、英语游戏和绘本内容进行跟读、对话、闯关和唱跳。画面风格要温馨、明亮、亲子友好，突出 AI 陪练、智能纠音、大屏护眼、游戏化学习和孩子主动开口说英语。
+
+固定场景库：
+1. 客厅大屏英语启蒙：孩子站在客厅电视或显示器前，手持陪练猫话筒，屏幕有卡通动物、英文单词和跟读提示，主机放在电视柜或桌面上。
+2. AI 陪练一对一对话：孩子拿话筒和屏幕里的 AI 卡通老师英文对话，屏幕可有实时评分、星星奖励、语音波形和鼓励动画。
+3. 英语单词闯关游戏：屏幕是闯关地图、金币、星星、卡通猫角色，孩子通过话筒说出 apple、banana、cat、dog 等单词通关。
+4. 智能纠音练习：孩子对话筒读英文单词或句子，屏幕显示发音评分、正确音标、绿色对勾和 Great job，家长可微笑陪伴但不干预。
+5. 亲子陪伴学习：晚上或周末，父母坐在沙发旁陪孩子使用陪练猫，孩子拿话筒跟读英文绘本，大屏显示绘本插画和英文句子。
+6. 儿童房独立练习：孩子在儿童房独立使用陪练猫，主机连接小显示器或投影，桌上有绘本、积木、学习卡片。
+7. 情景英语角色扮演：屏幕出现超市、动物园、餐厅或机场场景，孩子拿话筒扮演顾客、游客或小店员说简单英文。
+8. 唱跳儿歌英语启蒙：屏幕播放英文儿歌动画，孩子拿话筒跟唱并跟着节奏摆动，画面活泼有音乐和卡通元素。
+9. 晨间十分钟英语打卡：早晨阳光洒进客厅，孩子穿居家服或校服拿话筒完成每日英语打卡，屏幕有连续打卡、今日任务和徽章。
+10. 多孩子互动比赛：两个孩子轮流拿话筒对着大屏英语抢答或单词 PK，屏幕有分数、排行榜和奖励动画。
+11. 护眼大屏学习：孩子与屏幕保持安全距离，坐姿自然，手持话筒跟读，突出大屏、柔和光线、没有近距离盯手机或平板。
+12. 产品特写使用场景：前景展示陪练猫白色主机、话筒和连接显示器的组合，背景虚化显示孩子正在大屏前英语互动。`;
+
 export class AiService {
   private readonly modelManager = new ModelManager();
   private readonly promptService = new PromptService();
@@ -266,29 +283,97 @@ export class AiService {
   }
 
   async generateMomentTexts(idea: string, style: string): Promise<MomentsGenerateTextResult> {
-    const generated = await this.generateJsonWithLanguageModel<MomentsGenerateTextResult>(
-      await this.promptService.buildPrompt('moments-generate', { idea, topic: idea, style })
+    const prompt = await this.promptService.buildPrompt('moments-generate', { idea, style });
+    const generatedText = await this.generateTextWithLanguageModel(
+      this.withMomentGenerateRuntimeRequest(prompt, idea)
     );
+    const generated = generatedText ? this.normalizeMomentGenerateResponse(generatedText, idea, style) : undefined;
     if (generated?.results?.length) {
-      return {
-        type: 'generate',
-        idea: generated.idea || idea,
-        style: generated.style || style,
-        results: generated.results.slice(0, 3).map((item, index) => ({ index: index + 1, text: item.text }))
-      };
+      return generated;
     }
 
-    const text = idea.trim();
+    throw new Error('AI 没有返回可用的朋友圈文案，请检查语言模型配置或后台“朋友圈生成”提示词输出格式。');
+  }
+
+  private withMomentGenerateRuntimeRequest(prompt: string, idea: string): string {
+    return `${prompt}
+
+---
+APP 本次固定执行要求：
+用户输入：${idea.trim()}
+本次必须一次生成 3 条可选朋友圈文案。
+每条都必须是完整的「标题 + 正文三段」，正文三段之间空一行。
+每条文案之间只用一条横线 --- 隔开。
+即使用户只输入一句简单内容，也不要追问、不要让用户补充细节；请基于合理、真实、不过度编造的生活细节直接展开。
+只输出这 3 条最终文案，不输出 JSON、编号、解释、分析或创作思路。`;
+  }
+
+  private normalizeMomentGenerateResponse(
+    text: string,
+    idea: string,
+    style: string
+  ): MomentsGenerateTextResult | undefined {
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+
+    try {
+      const parsed = JSON.parse(this.extractJson(trimmed)) as Partial<MomentsGenerateTextResult>;
+      if (Array.isArray(parsed.results) && parsed.results.length > 0) {
+        const results = parsed.results
+          .map((item, index) => ({ index: index + 1, text: this.textValue((item as { text?: unknown })?.text) }))
+          .filter((item) => item.text);
+        if (results.length > 0) {
+          return {
+            type: 'generate',
+            idea: this.textValue(parsed.idea) || idea,
+            style: this.textValue(parsed.style) || style,
+            results: results.slice(0, 3)
+          };
+        }
+      }
+    } catch {
+      // Backend prompts may intentionally ask for copy-ready plain text instead of JSON.
+    }
+
+    const plainVersions = this.splitMomentPlainTextVersions(trimmed);
+    if (plainVersions.length === 0) return undefined;
+
     return {
       type: 'generate',
-      idea: text,
+      idea,
       style,
-      results: [
-        { index: 1, text: `${text}。\n\n拖着的时候觉得很难，做完反而松了一口气。` },
-        { index: 2, text: `今天的小进度：${text}。不算多厉害，但心里舒服了不少。` },
-        { index: 3, text: `${text}\n\n这种感觉还挺好，像是把生活里一个小角落收拾干净了。` }
-      ]
+      results: plainVersions.slice(0, 3).map((item, index) => ({ index: index + 1, text: item }))
     };
+  }
+
+  private splitMomentPlainTextVersions(text: string): string[] {
+    const normalized = text
+      .replace(/\r\n/gu, '\n')
+      .replace(/```(?:text|markdown)?/giu, '')
+      .replace(/```/gu, '')
+      .trim();
+    if (!normalized) return [];
+
+    const separated = normalized
+      .split(/\n\s*(?:-{3,}|—{3,}|_{3,})\s*\n/gu)
+      .map((item) => this.cleanMomentPlainText(item))
+      .filter(Boolean);
+    if (separated.length > 1) return separated;
+
+    const labeled = normalized
+      .split(/\n(?=(?:文案|版本|方案)\s*[一二三123]\s*[：:])/gu)
+      .map((item) => this.cleanMomentPlainText(item))
+      .filter(Boolean);
+    if (labeled.length > 1) return labeled;
+
+    return [this.cleanMomentPlainText(normalized)].filter(Boolean);
+  }
+
+  private cleanMomentPlainText(text: string): string {
+    return text
+      .replace(/^\s*(?:文案|版本|方案)\s*[一二三123]\s*[：:]\s*/u, '')
+      .replace(/^\s*(?:以下是|这是).*?朋友圈文案[：:：]?\s*/u, '')
+      .trim();
   }
 
   async generateTodayMomentSuggestion(rawContent: string): Promise<Pick<TodayMomentSuggestionResult, 'rewriteContent'>> {
@@ -314,21 +399,24 @@ export class AiService {
     const prompt = `根据这条朋友圈文案生成一张适合微信朋友圈发布的配图提示词。
 
 朋友圈文案：${selectedText}
-是否有参考人物图：${hasReferenceImage ? '是' : '否'}
+是否有参考图：${hasReferenceImage ? '是，包含固定陪练猫设备图，可能还包含用户上传图' : '否'}
+
+${PEILIAN_MOMENT_IMAGE_SCENE_GUIDE}
 
 要求：
 1. 只输出 JSON。
-2. imagePrompt 必须包含场景描述、人物描述、情绪氛围、自然构图、比例 1:1、真实生活感。
-3. 如果有参考人物图，必须强调保留参考图中人物的性别、大致年龄、脸型气质、发型、服饰风格和整体感觉，并让人物出现在新场景里。
-4. 如果没有参考图，可以生成自然生活氛围图，例如城市街景、咖啡馆、亲子场景、学习场景、旅行场景或随手拍生活场景。
-5. 避免文字、logo、水印、夸张海报感、商业广告感、假脸感、杂乱构图。
+2. imagePrompt 必须紧扣朋友圈文案本身，先理解文案情绪和事件，再从固定场景库里选择最贴合的 1 个陪练猫场景来生成。
+3. 画面必须自然出现陪练猫白色便携主机和儿童话筒，孩子手持话筒与大屏互动；不要只生成普通生活氛围图。
+4. 风格是微信朋友圈真实随手拍：自然光、手机拍摄感、家庭生活氛围、不过度摆拍、不过度修图、比例 1:1。
+5. 如果有参考图，必须把固定陪练猫设备图作为核心参考，保留设备外观并让它自然出现在场景里；如果还有用户上传图，也要参考用户图里的主体特征、人物气质或场景元素。
+6. 屏幕里可以有少量英文单词、分数、星星、语音波形或卡通学习 UI，但不要生成大段文字、广告标题、logo、水印、商业海报感、摆拍大片感、夸张滤镜、假脸感或杂乱构图。
 
 格式：
 {
   "type": "image",
   "selectedText": "用于生成配图的朋友圈文案",
   "hasReferenceImage": true,
-  "imagePrompt": "最终用于 image2 的图片生成提示词"
+  "imagePrompt": "最终用于 image2 的图片生成提示词，必须写明选用的陪练猫固定场景、孩子拿话筒、大屏互动、主机位置和朋友圈真实随手拍风格"
 }`;
 
     const generated = await this.generateJsonWithLanguageModel<Omit<MomentsImageResult, 'imageUrl'>>(prompt);
@@ -346,8 +434,8 @@ export class AiService {
       selectedText,
       hasReferenceImage,
       imagePrompt: hasReferenceImage
-        ? `根据用户上传的参考人物图，保留人物的核心形象特征，包括性别、大致年龄、脸型气质、发型、服饰风格和整体感觉。将人物放在一个与朋友圈文案“${selectedText}”一致的真实自然生活场景中，朋友圈随手拍风格，氛围轻松真实，有生活感，构图自然，光线柔和，比例 1:1，不要文字，不要 logo，不要水印，不要商业海报感，不要假脸感。`
-        : `根据朋友圈文案“${selectedText}”生成一张自然生活感氛围图，真实随手拍风格，场景与内容一致，光线柔和，构图干净，比例 1:1，适合微信朋友圈发布，不要文字，不要 logo，不要水印，不要商业海报感，不要夸张滤镜。`
+        ? `${PEILIAN_MOMENT_IMAGE_SCENE_GUIDE}\n\n根据朋友圈文案“${selectedText}”选择最贴合的 1 个固定场景生成微信朋友圈配图。固定参考图是陪练猫设备图，必须保留白色便携主机和儿童话筒的核心外观，让孩子手持话筒与电视、显示器或投影大屏自然互动；如果同时提供用户上传参考图，也要参考用户图里的主体特征、人物气质或场景元素。手机随手拍风格，自然光，温馨家庭学习氛围，比例 1:1，可以有少量英文学习 UI，不要广告海报感，不要商业摄影感，不要 logo、水印或大段文字。`
+        : `${PEILIAN_MOMENT_IMAGE_SCENE_GUIDE}\n\n根据朋友圈文案“${selectedText}”选择最贴合的 1 个固定场景生成微信朋友圈配图。画面必须出现陪练猫白色便携主机、儿童话筒、孩子手持话筒与大屏互动，突出英语启蒙、AI 陪练、智能纠音、大屏护眼或游戏化练习中的一个重点。手机随手拍风格，自然光，温馨家庭学习氛围，比例 1:1，可以有少量英文学习 UI，不要广告海报感，不要商业摄影感，不要 logo、水印或大段文字。`
     };
   }
 

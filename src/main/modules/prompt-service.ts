@@ -10,6 +10,16 @@ const REMOTE_EDITABLE_SCENARIOS = new Set<PromptScenario>([
   'video-script-generate'
 ]);
 
+const REMOTE_EDITABLE_SCENARIO_NAMES: Record<PromptScenario, string> = {
+  'video-today-topics': '今日短视频选题整理',
+  'video-topic-generate': '短视频选题生成',
+  'video-script-generate': '短视频脚本生成',
+  'moments-rewrite': '朋友圈改写',
+  'moments-generate': '朋友圈生成',
+  'article-generate': 'AI 图文发布生成',
+  'image-generate': '生图提示词'
+};
+
 const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> = [
   {
     id: 'default-video-today-topics',
@@ -174,34 +184,6 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
 }`
   },
   {
-    id: 'default-moments-today-suggestion',
-    scenario: 'moments-today-suggestion',
-    name: '今日朋友圈建议二创',
-    description: '把后台规划的今日朋友圈原始文案二创成自然真实的朋友圈表达。',
-    requiredVariables: ['rawContent'],
-    enabled: true,
-    builtIn: true,
-    template: `你是一个非常懂微信朋友圈表达的二创助手。
-
-后台配置的今日朋友圈原始文案：
-{{rawContent}}
-
-任务：在保留原文核心意思的前提下，把它改成一条适合今天发朋友圈的文案。
-
-要求：
-1. 保留原文核心信息，不编造关键事实。
-2. 语言自然、有真实感，像普通人自己发的朋友圈。
-3. 不要太像广告，不要营销号腔、官方宣传腔、公众号腔、AI 腔。
-4. 不要输出多个版本，不要输出解释、标题或分析。
-5. 默认 30-160 字，除非原文很短。
-6. 可以有 0-2 个 emoji，不要过多。
-
-只输出合法 JSON：
-{
-  "rewriteContent": "AI 二创后的今日朋友圈文案"
-}`
-  },
-  {
     id: 'default-article-generate',
     scenario: 'article-generate',
     name: 'AI 图文发布生成',
@@ -311,6 +293,12 @@ export class PromptService {
     const validRemoteTemplates = remoteTemplates.filter((item) =>
       item.enabled && REMOTE_EDITABLE_SCENARIOS.has(item.scenario) && item.template
     );
+    const validRemoteScenarios = new Set(validRemoteTemplates.map((item) => item.scenario));
+    const missingRemoteScenarios = [...REMOTE_EDITABLE_SCENARIOS].filter((scenario) => !validRemoteScenarios.has(scenario));
+    if (missingRemoteScenarios.length > 0) {
+      const names = missingRemoteScenarios.map((scenario) => REMOTE_EDITABLE_SCENARIO_NAMES[scenario]).join('、');
+      throw new Error(`后台提示词缺少：${names}。请先在网页后台补齐并保存提示词。`);
+    }
     const localTemplates = await this.readTemplates();
     if (validRemoteTemplates.length === 0) {
       const syncedAt = new Date().toISOString();
@@ -373,14 +361,6 @@ export class PromptService {
   }
 
   async buildPrompt(scenario: PromptScenario, variables: Record<string, unknown>): Promise<string> {
-    if (REMOTE_EDITABLE_SCENARIOS.has(scenario)) {
-      try {
-        await this.syncRemoteTemplates();
-      } catch {
-        // Keep generation usable when the backend is temporarily unavailable.
-      }
-    }
-
     const templates = await this.listTemplates();
     const template = templates.find((item) => item.scenario === scenario && item.enabled) ??
       templates.find((item) => item.scenario === scenario);

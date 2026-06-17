@@ -2,12 +2,21 @@ import { ModelManager } from './model-manager';
 import { PromptService } from './prompt-service';
 import { buildApiUrl, buildOpenAiCompatibleBaseUrls } from './api-url';
 
+export interface ImageReference {
+  name: string;
+  base64: string;
+}
+
 export class ImageService {
   private readonly modelManager = new ModelManager();
   private readonly promptService = new PromptService();
 
-  async generateIllustrationBase64(title: string, description: string, referenceImage?: string): Promise<string> {
-    const generated = await this.generateWithConfiguredModel(title, description, referenceImage);
+  async generateIllustrationBase64(
+    title: string,
+    description: string,
+    referenceImages: ImageReference[] = []
+  ): Promise<string> {
+    const generated = await this.generateWithConfiguredModel(title, description, referenceImages);
     if (generated) return generated;
 
     const configuredModel = await this.modelManager.getEnabledModel('image');
@@ -43,17 +52,19 @@ export class ImageService {
   private async generateWithConfiguredModel(
     title: string,
     description: string,
-    referenceImage?: string
+    referenceImages: ImageReference[] = []
   ): Promise<string | undefined> {
     const model = await this.modelManager.getEnabledModel('image');
     if (!model || model.provider === 'stability') return undefined;
 
     let lastError = '';
+    const isMomentImage = title.trim() === '朋友圈配图';
+    const size = isMomentImage ? '1024x1024' : '768x1344';
     try {
       for (const baseUrl of buildOpenAiCompatibleBaseUrls(model.baseUrl)) {
-        for (const prompt of await this.buildImagePrompts(title, description)) {
-          if (referenceImage) {
-            const edited = await this.generateImageEdit(baseUrl, model.apiKey, model.model, prompt, referenceImage);
+        for (const prompt of await this.buildImagePrompts(title, description, isMomentImage)) {
+          if (referenceImages.length > 0) {
+            const edited = await this.generateImageEdit(baseUrl, model.apiKey, model.model, prompt, referenceImages, size);
             if (edited.image) return edited.image;
             lastError = edited.error || lastError;
           }
@@ -67,9 +78,8 @@ export class ImageService {
             body: JSON.stringify({
               model: model.model,
               prompt,
-              size: '768x1344',
-              n: 1,
-              ...(referenceImage ? { image: referenceImage } : {})
+              size,
+              n: 1
             })
           });
           if (!response.ok) {
@@ -101,15 +111,22 @@ export class ImageService {
     apiKey: string,
     model: string,
     prompt: string,
-    referenceImage: string
+    referenceImages: ImageReference[],
+    size: string
   ): Promise<{ image?: string; error?: string }> {
     try {
       const formData = new FormData();
       formData.append('model', model);
       formData.append('prompt', prompt);
-      formData.append('size', '768x1344');
+      formData.append('size', size);
       formData.append('n', '1');
-      formData.append('image', this.base64ToBlob(referenceImage), 'reference.png');
+      referenceImages.forEach((referenceImage, index) => {
+        formData.append(
+          'image',
+          this.base64ToBlob(referenceImage.base64),
+          referenceImage.name || `reference-${index + 1}.png`
+        );
+      });
 
       const response = await fetch(buildApiUrl(baseUrl, '/images/edits'), {
         method: 'POST',
@@ -171,7 +188,16 @@ export class ImageService {
       .join('');
   }
 
-  private async buildImagePrompts(title: string, description: string): Promise<string[]> {
+  private async buildImagePrompts(title: string, description: string, isMomentImage = false): Promise<string[]> {
+    if (isMomentImage) {
+      const momentPrompt = this.compactPrompt(description, 900);
+      return [
+        momentPrompt,
+        `${momentPrompt} 微信朋友圈真实随手拍照片，手机拍摄感，自然光，1:1 square photo, child holding microphone, large screen English learning interaction, Peilian Cat device visible, small English learning UI allowed on screen, no ad text, no logo, no watermark, no poster.`,
+        `Realistic WeChat Moments square lifestyle photo based on this post: ${this.compactPrompt(description, 360)} Child holding a microphone, interacting with a large TV or monitor for English learning, Peilian Cat white device visible, warm family home, candid phone snapshot, small screen UI allowed, no logo, no watermark, no ad poster.`
+      ];
+    }
+
     const fullPrompt = await this.promptService.buildPrompt('image-generate', { title, description });
     const shortTitle = title.replace(/\s+/gu, ' ').slice(0, 40);
     return [

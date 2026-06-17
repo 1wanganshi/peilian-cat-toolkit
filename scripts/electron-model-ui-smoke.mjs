@@ -78,31 +78,11 @@ try {
       enabled: true
     });
     const checked = await api.checkModel(saved);
-    const templates = await api.listPromptTemplates();
-    const promptSaved = await api.savePromptTemplate({
-      scenario: 'video-script-generate',
-      name: 'Electron Smoke Prompt',
-      description: 'Prompt CRUD smoke',
-      requiredVariables: ['topic', 'duration'],
-      template: '主题：{{topic}}\n时长：{{duration}}',
-      enabled: true
-    });
-    const preview = await api.previewPrompt({
-      id: promptSaved.id,
-      variables: { topic: '陪练猫选题', duration: 30 }
-    });
-    const promptUpdated = await api.savePromptTemplate({
-      ...promptSaved,
-      name: 'Electron Smoke Prompt Updated',
-      requiredVariables: ['topic'],
-      template: '更新主题：{{topic}}'
-    });
-    const updatedPreview = await api.previewPrompt({
-      id: promptUpdated.id,
-      variables: { topic: '陪练猫选题' }
-    });
-    await api.deletePromptTemplate(promptSaved.id);
-    const templatesAfterDelete = await api.listPromptTemplates();
+    const rendererPromptAccess = typeof api.listPromptTemplates === 'function' ||
+      typeof api.savePromptTemplate === 'function' ||
+      typeof api.previewPrompt === 'function' ||
+      typeof api.deletePromptTemplate === 'function';
+    const canSyncPrompts = typeof api.syncPromptTemplatesFromBackend === 'function';
     const listed = await api.listModels();
     await api.deleteModel(saved.id);
     const afterDelete = await api.listModels();
@@ -112,10 +92,8 @@ try {
       listedCount: listed.length,
       afterDeleteCount: afterDelete.length,
       message: checked.message,
-      templateCount: templates.length,
-      previewHasTopic: preview.prompt.includes('陪练猫选题'),
-      updatedPreviewOk: updatedPreview.prompt.includes('更新主题'),
-      promptDeleted: !templatesAfterDelete.some((item) => item.id === promptSaved.id)
+      rendererPromptAccess,
+      canSyncPrompts
     };
   }, baseUrl);
 
@@ -123,17 +101,15 @@ try {
   assert.equal(result.savedName, 'Electron Smoke OpenAI');
   assert.equal(result.listedCount, 1);
   assert.equal(result.afterDeleteCount, 0);
-  assert.equal(result.templateCount >= 6, true);
-  assert.equal(result.previewHasTopic, true);
-  assert.equal(result.updatedPreviewOk, true);
-  assert.equal(result.promptDeleted, true);
+  assert.equal(result.rendererPromptAccess, false);
+  assert.equal(result.canSyncPrompts, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'GET');
   assert.equal(calls[0].url, '/v1/models/gpt-4.1');
   assert.equal(calls[0].authorization, 'Bearer mock-openai-key');
 
   console.log('electron model UI smoke passed');
-  console.log('verified renderer preload, IPC, model check, prompt CRUD, preview, save, list and delete');
+  console.log('verified renderer preload, IPC, model check, prompt sync entry, and hidden prompt CRUD APIs');
 } finally {
   if (app) await app.close();
   await new Promise((resolveClose) => server.close(resolveClose));

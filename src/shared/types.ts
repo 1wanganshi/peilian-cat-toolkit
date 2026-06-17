@@ -173,7 +173,7 @@ export interface GenerateScriptRequest {
 
 export interface GenerateMomentsRequest {
   idea: string;
-  style: string;
+  style?: string;
   referenceImage?: string;
   referenceImageName?: string;
 }
@@ -247,7 +247,6 @@ export type PromptScenario =
   | 'video-script-generate'
   | 'moments-rewrite'
   | 'moments-generate'
-  | 'moments-today-suggestion'
   | 'article-generate'
   | 'image-generate';
 
@@ -375,7 +374,6 @@ export type ElectronApi = {
   rewriteMoments: (text: string, style: string) => Promise<MomentsRewriteResult>;
   generateMomentTexts: (data: GenerateMomentsRequest) => Promise<MomentsGenerateTextResult>;
   generateMomentImage: (data: GenerateMomentImageRequest) => Promise<MomentsImageResult>;
-  generateMomentsWithImage: (data: GenerateMomentsRequest) => Promise<MomentsImageResult & { text: string; image: string }>;
   getTodayMomentPlan: () => Promise<MomentPlan[]>;
   generateTodayMomentSuggestion: () => Promise<TodayMomentSuggestionResult>;
   downloadImage: (base64Image: string, fileName?: string) => Promise<ExportResult>;

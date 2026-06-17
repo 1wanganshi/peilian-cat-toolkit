@@ -37,7 +37,7 @@ try {
     };
   });
 
-  assert.ok(result.sync.imported >= 1, 'expected at least one prompt imported from backend');
+  assert.equal(result.sync.imported, 3, 'expected all backend editable prompts to be imported');
   assert.equal(result.canReadPromptsInRenderer, false, 'renderer should not be able to read prompt templates');
 
   const rawPrompts = await readFile(resolve(userDataDir, 'prompts.json'), 'utf8');
@@ -47,6 +47,12 @@ try {
   assert.equal(videoScriptPrompt.builtIn, false, 'video-script-generate should be loaded from backend');
   assert.ok(/[\u4e00-\u9fff]/u.test(videoScriptPrompt.template), 'synced video script prompt should contain Chinese text');
   assert.ok(result.sync.scenarios.includes('video-script-generate'), 'sync result should include video-script-generate');
+  for (const scenario of ['moments-rewrite', 'moments-generate', 'video-script-generate']) {
+    const prompt = templates.find((item) => item.scenario === scenario);
+    assert.ok(prompt, `${scenario} prompt not found in local app templates`);
+    assert.equal(prompt.builtIn, false, `${scenario} should be loaded from backend`);
+    assert.ok(result.sync.scenarios.includes(scenario), `sync result should include ${scenario}`);
+  }
 
   console.log('prompt sync smoke passed');
   console.log(JSON.stringify({

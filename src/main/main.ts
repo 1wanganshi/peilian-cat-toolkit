@@ -212,7 +212,7 @@ function registerHandlers(): void {
   });
   ipcMain.handle('generate-moment-texts', async (_event, data) => {
     await authorizeAndTrack('moments', 'generate-moment-texts', shortText(data.idea));
-    const result = await momentsGenerator.generateTexts(data.idea, data.style);
+    const result = await momentsGenerator.generateTexts(data.idea, data.style ?? '');
     await saveHistorySafely({
       type: 'moments',
       title: '朋友圈文案生成',
@@ -228,22 +228,6 @@ function registerHandlers(): void {
       type: 'moment-image',
       title: '朋友圈配图生成',
       summary: result.imagePrompt || data.selectedText,
-      content: { request: { ...data, referenceImage: data.referenceImage ? '[uploaded-image]' : undefined }, result }
-    });
-    return result;
-  });
-  ipcMain.handle('generate-moments-with-image', async (_event, data) => {
-    await authorizeAndTrack('moments', 'generate-moments-with-image', shortText(data.idea ?? data.topic));
-    const result = await momentsGenerator.generateWithImage(
-      data.idea ?? data.topic,
-      data.style,
-      data.referenceImage,
-      data.referenceImageName ?? data.imageNames?.[0]
-    );
-    await saveHistorySafely({
-      type: 'moment-image',
-      title: '朋友圈文案和配图',
-      summary: result.text,
       content: { request: { ...data, referenceImage: data.referenceImage ? '[uploaded-image]' : undefined }, result }
     });
     return result;

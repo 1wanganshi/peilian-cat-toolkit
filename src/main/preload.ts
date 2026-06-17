@@ -21,8 +21,6 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.invoke('generate-moment-texts', data),
   generateMomentImage: (data: GenerateMomentImageRequest) =>
     ipcRenderer.invoke('generate-moment-image', data),
-  generateMomentsWithImage: (data: GenerateMomentsRequest) =>
-    ipcRenderer.invoke('generate-moments-with-image', data),
   getTodayMomentPlan: () => ipcRenderer.invoke('get-today-moment-plan'),
   generateTodayMomentSuggestion: () => ipcRenderer.invoke('generate-today-moment-suggestion'),
   downloadImage: (base64Image: string, fileName?: string) =>
