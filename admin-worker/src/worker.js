@@ -1,18 +1,22 @@
 const CONFIG_KEY = 'app:config';
 const CONFIG_BACKUP_LATEST_KEY = 'app:config:backup:latest';
 const CONFIG_BACKUP_PREFIX = 'app:config:backup:';
+const ADMIN_CONFIG_SCOPE_HEADER = 'x-admin-config-scope';
+const MOMENTS_CONFIG_SCOPE = 'moments';
+const USER_PHONE_HEADER = 'x-user-phone';
 const CURRENT_APP_RELEASE = {
-  latestVersion: '0.1.7',
-  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.7/Setup.0.1.7.exe',
-  releaseNotes: '修复朋友圈生成未正确执行后台提示词的问题；朋友圈生成固定先出 3 条三段式文案，再根据文案和陪练猫固定场景库生成 AI 配图。',
+  latestVersion: '0.1.8',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.8/Setup.0.1.8.exe',
+  releaseNotes: '新增后台大模型模块和前端模型设置；修复短视频脚本未调用大模型时静默使用预设模板的问题；朋友圈规划并入主后台并保护素材池不被普通配置保存覆盖。',
   force: false,
-  publishedAt: '2026-06-17T03:35:00.000Z'
+  publishedAt: '2026-06-17T08:20:00.000Z'
 };
 
 const DEFAULT_CONFIG = {
   prompts: [],
   momentPlans: [],
   momentPool: [],
+  privateModels: [],
   authorizedUsers: [],
   usageRecords: [],
   update: CURRENT_APP_RELEASE,
@@ -58,12 +62,12 @@ export default {
     try {
       if (url.pathname === '/' || url.pathname === '/admin') {
         assertAdmin(request, env);
-        return htmlResponse(renderAdminHtml(env.PUBLIC_BASE_URL || url.origin));
+        return htmlResponse(renderAdminHtml(env.PUBLIC_BASE_URL || url.origin, url.searchParams.get('tab') || 'update'));
       }
 
       if (url.pathname === '/admin/moments') {
         assertAdmin(request, env);
-        return htmlResponse(renderMomentPlannerHtml(env.PUBLIC_BASE_URL || url.origin));
+        return redirectResponse('/admin?tab=moments');
       }
 
       if (url.pathname === '/api/health') {
@@ -137,6 +141,27 @@ export default {
         return jsonResponse({ date, plans });
       }
 
+      if (url.pathname === '/api/models/private/status' && request.method === 'GET') {
+        const config = await readConfig(env);
+        return jsonResponse(privateModelStatus(config));
+      }
+
+      if (url.pathname === '/api/models/private/language/generate' && request.method === 'POST') {
+        const config = await readConfig(env);
+        assertAuthorizedAppUser(request, config);
+        const input = await request.json();
+        const result = await generatePrivateLanguage(config, input);
+        return jsonResponse(result);
+      }
+
+      if (url.pathname === '/api/models/private/image/generate' && request.method === 'POST') {
+        const config = await readConfig(env);
+        assertAuthorizedAppUser(request, config);
+        const input = await request.json();
+        const result = await generatePrivateImage(config, input);
+        return jsonResponse(result);
+      }
+
       if (url.pathname === '/api/admin/config' && request.method === 'GET') {
         assertAdmin(request, env);
         return jsonResponse(await readConfig(env));
@@ -147,9 +172,36 @@ export default {
         const input = await request.json();
         const existing = await readConfig(env);
         await backupConfig(env, existing);
-        const config = publishConfig(input, existing);
+        const config = publishConfig(input, existing, {
+          scope: request.headers.get(ADMIN_CONFIG_SCOPE_HEADER) === MOMENTS_CONFIG_SCOPE ? MOMENTS_CONFIG_SCOPE : 'general'
+        });
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true, config });
+      }
+
+      if (url.pathname === '/api/admin/private-models' && request.method === 'GET') {
+        assertAdmin(request, env);
+        const config = await readConfig(env);
+        return jsonResponse({ privateModels: sanitizePrivateModelsForAdmin(config.privateModels), status: privateModelStatus(config) });
+      }
+
+      if (url.pathname === '/api/admin/private-models' && request.method === 'PUT') {
+        assertAdmin(request, env);
+        const input = await request.json();
+        const existing = await readConfig(env);
+        await backupConfig(env, existing);
+        const config = normalizeConfig({
+          ...existing,
+          privateModels: Array.isArray(input?.privateModels) ? input.privateModels : existing.privateModels
+        });
+        await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
+        return jsonResponse({ ok: true, privateModels: sanitizePrivateModelsForAdmin(config.privateModels), status: privateModelStatus(config) });
+      }
+
+      if (url.pathname === '/api/admin/private-models/check' && request.method === 'POST') {
+        assertAdmin(request, env);
+        const input = await request.json();
+        return jsonResponse(await checkPrivateModel(input));
       }
 
       if (url.pathname === '/api/admin/moments/plans' && request.method === 'GET') {
@@ -169,6 +221,7 @@ export default {
         const config = await readConfig(env);
         const plan = normalizeMomentPlan(await request.json());
         validateMomentPlan(plan);
+        await backupConfig(env, config);
         config.momentPlans = [plan, ...config.momentPlans.filter((item) => item.id !== plan.id)];
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true, plan });
@@ -190,6 +243,7 @@ export default {
         if (!existing) return jsonResponse({ error: 'Moment plan not found' }, 404);
         const plan = normalizeMomentPlan({ ...existing, ...(await request.json()), id: existing.id, createdAt: existing.createdAt });
         validateMomentPlan(plan);
+        await backupConfig(env, config);
         config.momentPlans = config.momentPlans.map((item) => item.id === plan.id ? plan : item);
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true, plan });
@@ -200,6 +254,7 @@ export default {
         const config = await readConfig(env);
         const nextPlans = config.momentPlans.filter((item) => item.id !== planMatch[1]);
         if (nextPlans.length === config.momentPlans.length) return jsonResponse({ error: 'Moment plan not found' }, 404);
+        await backupConfig(env, config);
         config.momentPlans = nextPlans;
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true });
@@ -215,6 +270,7 @@ export default {
         const input = await request.json();
         const config = await readConfig(env);
         const poolInput = Array.isArray(input?.momentPool) ? input.momentPool : Array.isArray(input?.items) ? input.items : [];
+        await backupConfig(env, config);
         config.momentPool = poolInput.map(normalizeMomentPoolItem).filter(Boolean);
         await env.CONFIG.put(CONFIG_KEY, JSON.stringify(config, null, 2));
         return jsonResponse({ ok: true, momentPool: config.momentPool, config });
@@ -245,6 +301,7 @@ function normalizeConfig(input) {
   const meta = normalizeMeta(input?.meta);
   const momentPlans = Array.isArray(input?.momentPlans) ? input.momentPlans.map(normalizeMomentPlan).filter(Boolean) : [];
   const momentPool = Array.isArray(input?.momentPool) ? input.momentPool.map(normalizeMomentPoolItem).filter(Boolean) : [];
+  const privateModels = Array.isArray(input?.privateModels) ? input.privateModels.map(normalizePrivateModel).filter(Boolean) : [];
   const authorizedUsers = Array.isArray(input?.authorizedUsers) ? input.authorizedUsers.map(normalizeAuthorizedUser).filter(Boolean) : [];
   const usageRecords = Array.isArray(input?.usageRecords) ? input.usageRecords.map(normalizeUsageRecord).filter(Boolean) : [];
   const savedUpdate = {
@@ -262,6 +319,7 @@ function normalizeConfig(input) {
     prompts,
     momentPlans,
     momentPool,
+    privateModels,
     authorizedUsers,
     usageRecords,
     update,
@@ -273,17 +331,21 @@ function normalizeConfig(input) {
   };
 }
 
-function publishConfig(input, existing = DEFAULT_CONFIG) {
+function publishConfig(input, existing = DEFAULT_CONFIG, options = {}) {
+  const scope = options.scope === MOMENTS_CONFIG_SCOPE ? MOMENTS_CONFIG_SCOPE : 'general';
+  const allowGeneralData = scope !== MOMENTS_CONFIG_SCOPE;
+  const allowMomentData = scope === MOMENTS_CONFIG_SCOPE;
   const current = normalizeConfig({
     ...existing,
     ...input,
-    prompts: Array.isArray(input?.prompts) ? input.prompts : existing.prompts,
-    momentPlans: Array.isArray(input?.momentPlans) ? input.momentPlans : existing.momentPlans,
-    momentPool: Array.isArray(input?.momentPool) ? input.momentPool : existing.momentPool,
-    authorizedUsers: Array.isArray(input?.authorizedUsers) ? input.authorizedUsers : existing.authorizedUsers,
-    usageRecords: Array.isArray(input?.usageRecords) ? input.usageRecords : existing.usageRecords,
-    update: input?.update ? { ...existing.update, ...input.update } : existing.update,
-    meta: input?.meta ? { ...existing.meta, ...input.meta } : existing.meta
+    prompts: allowGeneralData && Array.isArray(input?.prompts) ? input.prompts : existing.prompts,
+    momentPlans: allowMomentData && Array.isArray(input?.momentPlans) ? input.momentPlans : existing.momentPlans,
+    momentPool: allowMomentData && Array.isArray(input?.momentPool) ? input.momentPool : existing.momentPool,
+    privateModels: allowGeneralData && Array.isArray(input?.privateModels) ? input.privateModels : existing.privateModels,
+    authorizedUsers: allowGeneralData && Array.isArray(input?.authorizedUsers) ? input.authorizedUsers : existing.authorizedUsers,
+    usageRecords: allowGeneralData && Array.isArray(input?.usageRecords) ? input.usageRecords : existing.usageRecords,
+    update: allowGeneralData && input?.update ? { ...existing.update, ...input.update } : existing.update,
+    meta: allowGeneralData && input?.meta ? { ...existing.meta, ...input.meta } : existing.meta
   });
   return {
     ...current,
@@ -301,6 +363,293 @@ function publicConfig(config) {
     update: config.update,
     meta: config.meta
   };
+}
+
+function normalizePrivateModel(input) {
+  const kind = text(input?.kind);
+  const provider = text(input?.provider);
+  const model = text(input?.model);
+  const baseUrl = normalizeBaseUrl(input?.baseUrl);
+  const apiKey = text(input?.apiKey);
+  if (!['language', 'image'].includes(kind)) return undefined;
+  if (!['openai', 'claude', 'stability', 'custom'].includes(provider)) return undefined;
+  if (!model || !baseUrl || !apiKey) return undefined;
+  const now = new Date().toISOString();
+  return {
+    id: text(input?.id) || crypto.randomUUID(),
+    name: text(input?.name) || (kind === 'language' ? '私密文字大模型' : '私密生图大模型'),
+    kind,
+    provider,
+    model,
+    baseUrl,
+    apiKey,
+    enabled: input?.enabled !== false,
+    lastCheckedAt: text(input?.lastCheckedAt),
+    lastStatus: ['success', 'failed'].includes(text(input?.lastStatus)) ? text(input?.lastStatus) : undefined,
+    lastMessage: text(input?.lastMessage),
+    createdAt: text(input?.createdAt) || now,
+    updatedAt: now
+  };
+}
+
+function sanitizePrivateModelForAdmin(model) {
+  return {
+    ...model,
+    apiKey: model.apiKey ? '********' : ''
+  };
+}
+
+function sanitizePrivateModelsForAdmin(models = []) {
+  return models.map(sanitizePrivateModelForAdmin);
+}
+
+function privateModelStatus(config) {
+  const language = findPrivateModel(config, 'language');
+  const image = findPrivateModel(config, 'image');
+  return {
+    languageAvailable: Boolean(language),
+    imageAvailable: Boolean(image),
+    languageName: language?.name || '',
+    imageName: image?.name || '',
+    updatedAt: [language?.updatedAt, image?.updatedAt].filter(Boolean).sort().pop() || ''
+  };
+}
+
+function findPrivateModel(config, kind) {
+  return (config.privateModels || []).find((model) => model.kind === kind && model.enabled);
+}
+
+function assertAuthorizedAppUser(request, config) {
+  const inputPhone = normalizePhone(request.headers.get(USER_PHONE_HEADER) || '');
+  const user = config.authorizedUsers.find((item) => item.phone === inputPhone && item.enabled);
+  if (user) return user;
+  const error = new Error('手机号未授权，不能使用私密模型');
+  error.status = 403;
+  throw error;
+}
+
+function normalizeBaseUrl(value) {
+  return text(value).replace(/\/+$/u, '');
+}
+
+function buildApiUrl(baseUrl, path) {
+  const cleanBase = normalizeBaseUrl(baseUrl);
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+}
+
+function buildOpenAiCompatibleBaseUrls(baseUrl) {
+  const cleanBase = normalizeBaseUrl(baseUrl);
+  if (!cleanBase) return [];
+  const urls = [cleanBase];
+  if (!/\/v\d+(?:\/)?$/u.test(cleanBase)) urls.push(`${cleanBase}/v1`);
+  return Array.from(new Set(urls));
+}
+
+async function checkPrivateModel(input) {
+  const model = normalizePrivateModel(input);
+  const checkedAt = new Date().toISOString();
+  if (!model) {
+    return { ok: false, message: '模型配置不完整，请填写类型、服务商、模型 ID、Base URL 和 API Key', checkedAt };
+  }
+  try {
+    if (model.kind === 'language') {
+      const textResult = await callPrivateLanguageModel(model, '请只回复“连接成功”。', 80);
+      return {
+        ok: Boolean(textResult),
+        message: textResult ? '私密文字大模型连接成功' : '私密文字大模型没有返回内容',
+        checkedAt
+      };
+    }
+    const imageResult = await callPrivateImageModel(model, 'A simple green check mark icon on white background, clean.', [], '1024x1024');
+    return {
+      ok: Boolean(imageResult),
+      message: imageResult ? '私密生图大模型连接成功' : '私密生图大模型没有返回图片',
+      checkedAt
+    };
+  } catch (error) {
+    return { ok: false, message: error?.message || '模型检测失败', checkedAt };
+  }
+}
+
+async function generatePrivateLanguage(config, input) {
+  const model = findPrivateModel(config, 'language');
+  if (!model) {
+    const error = new Error('后台未启用“王安实自用私密文字大模型”');
+    error.status = 503;
+    throw error;
+  }
+  const prompt = text(input?.prompt);
+  if (!prompt) {
+    const error = new Error('缺少 prompt');
+    error.status = 400;
+    throw error;
+  }
+  const textResult = await callPrivateLanguageModel(model, prompt, Number(input?.maxTokens) || 1800);
+  if (!textResult) {
+    const error = new Error('私密文字大模型没有返回内容');
+    error.status = 502;
+    throw error;
+  }
+  return { text: textResult };
+}
+
+async function callPrivateLanguageModel(model, prompt, maxTokens = 1800) {
+  if (model.provider === 'claude') {
+    const response = await fetch(buildApiUrl(model.baseUrl, '/messages'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': model.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: model.model,
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!response.ok) throw new Error(`Claude HTTP ${response.status}: ${(await response.text()).slice(0, 180)}`);
+    const data = await response.json();
+    return (data.content || []).map((item) => item.text || '').join('').trim();
+  }
+
+  let lastError = '';
+  for (const baseUrl of buildOpenAiCompatibleBaseUrls(model.baseUrl)) {
+    const response = await fetch(buildApiUrl(baseUrl, '/chat/completions'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${model.apiKey}`
+      },
+      body: JSON.stringify({
+        model: model.model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8
+      })
+    });
+    if (!response.ok) {
+      lastError = `HTTP ${response.status}: ${(await response.text()).slice(0, 180)}`;
+      continue;
+    }
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (content) return content;
+  }
+  if (lastError) throw new Error(lastError);
+  return '';
+}
+
+async function generatePrivateImage(config, input) {
+  const model = findPrivateModel(config, 'image');
+  if (!model) {
+    const error = new Error('后台未启用“王安实自用私密生图大模型”');
+    error.status = 503;
+    throw error;
+  }
+  const prompt = text(input?.prompt);
+  if (!prompt) {
+    const error = new Error('缺少 prompt');
+    error.status = 400;
+    throw error;
+  }
+  const referenceImages = Array.isArray(input?.referenceImages) ? input.referenceImages.map(normalizeImageReference).filter(Boolean) : [];
+  const image = await callPrivateImageModel(model, prompt, referenceImages, text(input?.size) || '1024x1024');
+  if (!image) {
+    const error = new Error('私密生图大模型没有返回图片');
+    error.status = 502;
+    throw error;
+  }
+  return { image };
+}
+
+async function callPrivateImageModel(model, prompt, referenceImages = [], size = '1024x1024') {
+  if (model.provider === 'stability') {
+    const error = new Error('私密生图暂不支持 Stability 代理，请使用 OpenAI 兼容图片接口');
+    error.status = 400;
+    throw error;
+  }
+
+  let lastError = '';
+  for (const baseUrl of buildOpenAiCompatibleBaseUrls(model.baseUrl)) {
+    if (referenceImages.length) {
+      const edited = await callPrivateImageEdit(baseUrl, model, prompt, referenceImages, size);
+      if (edited.image) return edited.image;
+      lastError = edited.error || lastError;
+    }
+
+    const response = await fetch(buildApiUrl(baseUrl, '/images/generations'), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${model.apiKey}`
+      },
+      body: JSON.stringify({ model: model.model, prompt, size, n: 1 })
+    });
+    if (!response.ok) {
+      lastError = `HTTP ${response.status}: ${(await response.text()).slice(0, 180)}`;
+      continue;
+    }
+    const data = await response.json();
+    if (data.data?.[0]?.b64_json) return data.data[0].b64_json;
+    if (data.data?.[0]?.url) return downloadImageAsBase64(data.data[0].url);
+  }
+  if (lastError) throw new Error(lastError);
+  return '';
+}
+
+async function callPrivateImageEdit(baseUrl, model, prompt, referenceImages, size) {
+  try {
+    const formData = new FormData();
+    formData.append('model', model.model);
+    formData.append('prompt', prompt);
+    formData.append('size', size);
+    formData.append('n', '1');
+    referenceImages.forEach((referenceImage, index) => {
+      formData.append('image', base64ToBlob(referenceImage.base64), referenceImage.name || `reference-${index + 1}.png`);
+    });
+    const response = await fetch(buildApiUrl(baseUrl, '/images/edits'), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${model.apiKey}` },
+      body: formData
+    });
+    if (!response.ok) return { error: `HTTP ${response.status}: ${(await response.text()).slice(0, 180)}` };
+    const data = await response.json();
+    if (data.data?.[0]?.b64_json) return { image: data.data[0].b64_json };
+    if (data.data?.[0]?.url) return { image: await downloadImageAsBase64(data.data[0].url) };
+    return { error: '图片编辑接口没有返回图片数据' };
+  } catch (error) {
+    return { error: error?.message || '图片编辑接口请求失败' };
+  }
+}
+
+function normalizeImageReference(input) {
+  const base64 = typeof input?.base64 === 'string' ? input.base64 : '';
+  if (!base64) return undefined;
+  return {
+    name: text(input?.name) || 'reference.png',
+    base64
+  };
+}
+
+function base64ToBlob(base64Image) {
+  const clean = base64Image.replace(/^data:image\/[a-z0-9.+-]+;base64,/iu, '');
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: inferImageMime(bytes) });
+}
+
+function inferImageMime(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return 'image/webp';
+  return 'image/png';
+}
+
+async function downloadImageAsBase64(url) {
+  const response = await fetch(url);
+  if (!response.ok) return '';
+  return arrayBufferToBase64(await response.arrayBuffer());
 }
 
 function normalizeAuthorizedUser(input) {
@@ -585,11 +934,18 @@ function htmlResponse(html) {
   }));
 }
 
+function redirectResponse(location, status = 302) {
+  return withCors(new Response(null, {
+    status,
+    headers: { location }
+  }));
+}
+
 function withCors(response) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', '*');
   headers.set('access-control-allow-methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type,accept,x-admin-username,x-admin-password');
+  headers.set('access-control-allow-headers', `content-type,accept,x-admin-username,x-admin-password,${ADMIN_CONFIG_SCOPE_HEADER}`);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -749,7 +1105,7 @@ function renderMomentPlannerHtml(publicBaseUrl) {
       }
       const res = await fetch(api + "/api/admin/config", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-admin-config-scope": "moments" },
         body: JSON.stringify(state)
       });
       if (!res.ok) throw new Error(await res.text());
@@ -1189,11 +1545,11 @@ function renderMomentPlannerHtml(publicBaseUrl) {
 </html>`;
 }
 
-function renderAdminHtml(publicBaseUrl) {
-  return renderAdminLandingHtml(publicBaseUrl);
+function renderAdminHtml(publicBaseUrl, initialTab = 'update') {
+  return renderAdminLandingHtml(publicBaseUrl, initialTab);
 }
 
-function renderAdminLandingHtml(publicBaseUrl) {
+function renderAdminLandingHtml(publicBaseUrl, initialTab = 'update') {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -1245,10 +1601,43 @@ function renderAdminLandingHtml(publicBaseUrl) {
     .prompt-item { width: 100%; text-align: left; border: 1px solid #e0d7c8; background: #fff; color: #26312f; display: grid; gap: 6px; }
     .prompt-item.active { border-color: #2e7869; background: #f5fbf7; color: #1f6658; }
     .readonly-field { border: 1px solid #e0d7c8; border-radius: 6px; background: #f8f5ee; padding: 10px 11px; color: #40504d; line-height: 1.55; }
-    iframe { width: 100%; height: 76vh; border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; }
+    .model-grid { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .model-card { border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 14px; display: grid; gap: 10px; }
+    .model-card code { overflow-wrap: anywhere; }
+    .model-status { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .moments-planner { display: grid; gap: 18px; }
+    .moments-planner .toolbar { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: flex; justify-content: space-between; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .moments-planner .planner { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(320px, 420px); gap: 18px; align-items: start; }
+    .moments-planner .planner-panel { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: grid; gap: 14px; }
+    .moments-planner .calendar-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .moments-planner .weekday-grid, .moments-planner .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+    .moments-planner .weekday-grid span { color: #68726f; font-size: 12px; text-align: center; font-weight: 800; }
+    .moments-planner .day { min-height: 76px; border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 8px; display: grid; align-content: start; gap: 6px; color: #26312f; text-align: left; }
+    .moments-planner .day.blank { visibility: hidden; }
+    .moments-planner .day.selected { border-color: #2e7869; box-shadow: inset 0 0 0 1px #2e7869; background: #f5fbf7; }
+    .moments-planner .day.today { border-color: #a15b2f; }
+    .moments-planner .day strong { font-size: 15px; }
+    .moments-planner .badge { display: inline-flex; width: fit-content; padding: 2px 7px; border-radius: 999px; background: #eef5ef; color: #25453e; font-size: 12px; }
+    .moments-planner .entry-list { display: grid; gap: 12px; }
+    .moments-planner .entry-card { border: 1px solid #e0d7c8; background: #fff; border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
+    .moments-planner .entry-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .moments-planner .grid2 { grid-template-columns: 160px minmax(0, 1fr); }
+    .moments-planner .material-list { display: grid; gap: 10px; }
+    .moments-planner .material-row { display: grid; grid-template-columns: 120px 120px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+    .moments-planner .hidden-file-input { display: none; }
+    .moments-planner .drop-zone { border: 1px dashed #b9c8bf; border-radius: 8px; background: #f5fbf7; padding: 14px; color: #2e7869; text-align: center; cursor: pointer; }
+    .moments-planner .drop-zone.drag-over, .moments-planner .entry-card.drag-over { border-color: #2e7869; background: #eef9f3; }
+    .moments-planner .pool-panel { max-height: calc(100vh - 190px); overflow: auto; }
+    .moments-planner .pool-list { display: grid; gap: 10px; }
+    .moments-planner .pool-card { border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 10px; }
+    .moments-planner .pool-card textarea { min-height: 74px; }
+    .moments-planner .pool-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .moments-planner .pool-meta { color: #68726f; font-size: 12px; }
+    .moments-planner .empty { border: 1px dashed #c9d7cd; border-radius: 8px; padding: 18px; color: #68726f; background: #f9fbf7; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes savedPulse { 0% { transform: scale(.98); } 45% { transform: scale(1.03); } 100% { transform: scale(1); } }
     @keyframes statusPop { 0% { opacity: .35; transform: translateY(-4px); } 100% { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 1180px) { .moments-planner .planner, .moments-planner .grid2, .moments-planner .material-row { grid-template-columns: 1fr; } .moments-planner .day { min-height: 62px; } }
     @media (max-width: 980px) { .grid2, .grid3, .usage-grid, .usage-line, .prompt-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -1266,6 +1655,7 @@ function renderAdminLandingHtml(publicBaseUrl) {
       <button data-tab="prompts">提示词管理</button>
       <button data-tab="users">用户授权</button>
       <button data-tab="usage">用户使用记录</button>
+      <button data-tab="models">大模型模块</button>
       <button data-tab="moments">朋友圈规划</button>
     </nav>
   </header>
@@ -1353,21 +1743,109 @@ function renderAdminLandingHtml(publicBaseUrl) {
       </div>
     </section>
 
+    <section class="panel" id="panel-models">
+      <div class="card-head">
+        <div>
+          <h2>大模型模块</h2>
+          <div class="muted">这里配置“王安实自用私密模型”。前端 APP 只能使用，不会看到模型 ID、Base URL 或 API Key。</div>
+        </div>
+        <div class="row">
+          <button id="reloadModels">读取模型</button>
+          <button class="primary" id="saveModels">保存模型</button>
+        </div>
+      </div>
+      <div class="model-grid">
+        <div class="card">
+          <h3>添加/编辑私密模型</h3>
+          <input id="modelEditingId" type="hidden" />
+          <div class="grid2">
+            <label>模型用途
+              <select id="modelKind">
+                <option value="language">文字生成大模型</option>
+                <option value="image">生图大模型</option>
+              </select>
+            </label>
+            <label>服务商
+              <select id="modelProvider">
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude</option>
+                <option value="custom">自定义兼容接口</option>
+                <option value="stability">Stability AI</option>
+              </select>
+            </label>
+          </div>
+          <label>配置名称 <input id="modelName" placeholder="例如：王安实文字模型" /></label>
+          <label>模型 ID <input id="modelIdValue" placeholder="例如：gpt-5.5 / gpt-image-2" /></label>
+          <label>Base URL <input id="modelBaseUrl" placeholder="https://api.example.com/v1" /></label>
+          <label>API Key <input id="modelApiKey" type="password" placeholder="保存后不会在前台 APP 暴露" /></label>
+          <label class="row"><input id="modelEnabled" type="checkbox" style="width:auto" checked /> 启用</label>
+          <div class="row">
+            <button class="primary" id="addOrUpdateModel">保存到待发布</button>
+            <button id="checkPrivateModel">检测连接</button>
+            <button id="resetPrivateModel">清空</button>
+          </div>
+          <div class="muted">文字模型用于短视频脚本、朋友圈文案和图文内容；生图模型用于朋友圈配图和图文配图。</div>
+        </div>
+        <div class="list" id="privateModelList"></div>
+      </div>
+    </section>
+
     <section class="panel" id="panel-moments">
       <div class="card-head">
         <div>
           <h2>朋友圈规划</h2>
-          <div class="muted">朋友圈规划页面展示在下方，继续维护每天的朋友圈内容。</div>
+          <div class="muted">朋友圈规划直接进入后台内置管理页，不再通过新窗口或嵌套网页打开。</div>
         </div>
-        <a class="button" href="/admin/moments" target="_blank" rel="noreferrer">新窗口打开</a>
+        <div class="row">
+          <button id="momentReload">读取规划</button>
+          <button class="primary" id="momentSave">保存规划</button>
+        </div>
       </div>
-      <iframe src="/admin/moments" title="朋友圈规划"></iframe>
+      <div class="moments-planner">
+        <div class="toolbar">
+          <div>
+            <h3 id="momentSelectedTitle">今日朋友圈规划</h3>
+            <div class="muted" id="momentEntrySummary">选择日期后维护朋友圈文案和素材。</div>
+          </div>
+          <div class="row">
+            <button id="momentAddEntry">添加一条朋友圈</button>
+            <button id="momentActivateAll">当天全部启用</button>
+            <button id="momentAddPoolItem">新增池内容</button>
+          </div>
+        </div>
+        <div class="planner">
+          <section class="planner-panel">
+            <div class="calendar-head">
+              <button id="momentPrevMonth">上个月</button>
+              <strong id="momentMonthTitle"></strong>
+              <button id="momentNextMonth">下个月</button>
+            </div>
+            <div class="weekday-grid"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+            <div class="calendar-grid" id="momentCalendar"></div>
+          </section>
+          <section class="planner-panel">
+            <div class="entry-list" id="momentEntryList"></div>
+          </section>
+          <section class="planner-panel pool-panel">
+            <div class="entry-head">
+              <div>
+                <h3>朋友圈池</h3>
+                <div class="muted">可长期保存反复使用的素材和文案，更新版本也不会被普通配置保存覆盖。</div>
+              </div>
+            </div>
+            <div class="drop-zone" id="momentPoolDropZone">拖拽素材到这里会自动进入朋友圈池</div>
+            <input class="hidden-file-input" id="momentPoolUpload" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
+            <div class="pool-list" id="momentPoolList"></div>
+          </section>
+        </div>
+      </div>
     </section>
   </main>
   <script>
-    let state = { prompts: [], momentPlans: [], authorizedUsers: [], usageRecords: [], update: {}, meta: { promptRevision: 0, promptsUpdatedAt: "", promptCount: 0 } };
+    let state = { prompts: [], momentPlans: [], momentPool: [], privateModels: [], authorizedUsers: [], usageRecords: [], update: {}, meta: { promptRevision: 0, promptsUpdatedAt: "", promptCount: 0 } };
     let activeUsagePhone = "";
     let editingPromptId = "";
+    let activeTab = ${JSON.stringify(['update', 'prompts', 'users', 'usage', 'models', 'moments'].includes(initialTab) ? initialTab : 'update')};
     const editablePromptCatalog = ${JSON.stringify(EDITABLE_PROMPT_CATALOG)};
     const api = location.origin;
     const $ = (id) => document.getElementById(id);
@@ -1417,6 +1895,9 @@ function renderAdminLandingHtml(publicBaseUrl) {
       state.authorizedUsers = Array.isArray(state.authorizedUsers) ? state.authorizedUsers : [];
       state.usageRecords = Array.isArray(state.usageRecords) ? state.usageRecords : [];
       state.prompts = Array.isArray(state.prompts) ? state.prompts : [];
+      state.momentPlans = Array.isArray(state.momentPlans) ? state.momentPlans : [];
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+      state.privateModels = Array.isArray(state.privateModels) ? state.privateModels : [];
       hydrate();
       setStatus("后台数据已读取");
     }
@@ -1432,6 +1913,9 @@ function renderAdminLandingHtml(publicBaseUrl) {
       state.authorizedUsers = Array.isArray(state.authorizedUsers) ? state.authorizedUsers : [];
       state.usageRecords = Array.isArray(state.usageRecords) ? state.usageRecords : [];
       state.prompts = Array.isArray(state.prompts) ? state.prompts : [];
+      state.momentPlans = Array.isArray(state.momentPlans) ? state.momentPlans : [];
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+      state.privateModels = Array.isArray(state.privateModels) ? state.privateModels : [];
       hydrate();
       setStatus(message || "已保存发布");
     }
@@ -1446,6 +1930,8 @@ function renderAdminLandingHtml(publicBaseUrl) {
       fillPromptEditor();
       renderUsers();
       renderUsage();
+      renderPrivateModels();
+      renderMomentPlannerAll();
     }
     function saveUpdateToState() {
       state.update = {
@@ -1566,7 +2052,248 @@ function renderAdminLandingHtml(publicBaseUrl) {
       for (const record of state.usageRecords) set.add(record.phone);
       return Array.from(set).filter(Boolean).sort();
     }
+    let momentSelectedDate = toLocalDateString(new Date());
+    let momentMonthCursor = new Date();
+    function renderMomentPlannerAll() {
+      if (!$("momentCalendar")) return;
+      state.momentPlans = Array.isArray(state.momentPlans) ? state.momentPlans : [];
+      state.momentPool = Array.isArray(state.momentPool) ? state.momentPool : [];
+      $("momentSelectedTitle").textContent = momentSelectedDate + " 朋友圈规划";
+      renderMomentCalendar();
+      renderMomentEntries();
+      renderMomentPool();
+    }
+    function renderMomentCalendar() {
+      const y = momentMonthCursor.getFullYear();
+      const m = momentMonthCursor.getMonth();
+      $("momentMonthTitle").textContent = y + "年" + String(m + 1).padStart(2, "0") + "月";
+      const first = new Date(y, m, 1).getDay();
+      const days = new Date(y, m + 1, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < first; i += 1) cells.push('<button class="day blank" type="button"></button>');
+      for (let d = 1; d <= days; d += 1) {
+        const date = toLocalDateString(new Date(y, m, d));
+        const entries = momentEntriesForDate(date);
+        const active = entries.filter((item) => item.status === "active").length;
+        const cls = "day" + (date === momentSelectedDate ? " selected" : "") + (date === toLocalDateString(new Date()) ? " today" : "");
+        cells.push('<button class="' + cls + '" type="button" data-moment-date="' + date + '"><strong>' + d + '</strong>' + (entries.length ? '<span class="badge">' + entries.length + '条 / ' + active + '启用</span>' : '') + '</button>');
+      }
+      $("momentCalendar").innerHTML = cells.join("");
+    }
+    function momentEntriesForDate(date) {
+      return state.momentPlans.filter((item) => item.date === date).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+    }
+    function renderMomentEntries() {
+      const entries = momentEntriesForDate(momentSelectedDate);
+      $("momentEntrySummary").textContent = entries.length ? "共 " + entries.length + " 条，APP 会读取其中启用的内容。" : "这一天还没有朋友圈内容。";
+      $("momentEntryList").innerHTML = entries.length ? entries.map((item, index) => renderMomentEntry(item, index)).join("") : '<div class="empty">点击“添加一条朋友圈”，给 ' + escapeHtml(momentSelectedDate) + ' 新增文字和素材。</div>';
+    }
+    function renderMomentEntry(item, index) {
+      const materials = Array.isArray(item.materials) ? item.materials : [];
+      return '<article class="entry-card" data-moment-plan-card="' + escapeAttr(item.id) + '">' +
+        '<div class="entry-head"><h3>第 ' + (index + 1) + ' 条朋友圈</h3><div class="row"><button data-moment-duplicate-plan="' + escapeAttr(item.id) + '">复制</button><button class="danger" data-moment-delete-plan="' + escapeAttr(item.id) + '">删除</button></div></div>' +
+        '<div class="grid2"><label>状态<select data-moment-plan-status="' + escapeAttr(item.id) + '"><option value="active"' + (item.status === "active" ? " selected" : "") + '>启用</option><option value="draft"' + (item.status === "draft" ? " selected" : "") + '>草稿</option><option value="inactive"' + (item.status === "inactive" ? " selected" : "") + '>停用</option></select></label><label>备注<input data-moment-plan-remark="' + escapeAttr(item.id) + '" value="' + escapeAttr(item.remark || "") + '" placeholder="内部备注，可不填" /></label></div>' +
+        '<label>朋友圈文字<textarea data-moment-plan-raw="' + escapeAttr(item.id) + '" placeholder="输入这条朋友圈的原始内容，APP 会在用户点击时实时改写">' + escapeHtml(item.rawContent || "") + '</textarea></label>' +
+        '<div class="entry-head"><strong>素材</strong><div class="row"><button data-moment-add-material="' + escapeAttr(item.id) + '">添加链接</button><button type="button" data-moment-pick-upload="' + escapeAttr(item.id) + '">上传到本条</button><button type="button" data-moment-open-pool="' + escapeAttr(item.id) + '">从池子选择</button><input class="hidden-file-input" type="file" multiple data-moment-upload-material="' + escapeAttr(item.id) + '" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></div></div>' +
+        '<div class="drop-zone" data-moment-drop-material="' + escapeAttr(item.id) + '">拖拽素材到这里会自动上传并保存</div>' +
+        '<div class="material-list">' + (materials.length ? materials.map((material, materialIndex) => renderMomentMaterial(item.id, material, materialIndex)).join("") : '<div class="empty">这条朋友圈还没有素材。</div>') + '</div>' +
+      '</article>';
+    }
+    function renderMomentMaterial(planId, material, index) {
+      return '<div class="material-row"><input data-moment-material-name="' + escapeAttr(planId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.name || "") + '" placeholder="素材名称" /><select data-moment-material-type="' + escapeAttr(planId) + '" data-material-index="' + index + '"><option value="image"' + (material.type === "image" ? " selected" : "") + '>图片</option><option value="video"' + (material.type === "video" ? " selected" : "") + '>视频</option><option value="file"' + (material.type === "file" ? " selected" : "") + '>文件</option></select><input data-moment-material-url="' + escapeAttr(planId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.url || "") + '" placeholder="https:// 或 data:" /><button class="danger" data-moment-remove-material="' + escapeAttr(planId) + '" data-material-index="' + index + '">删除</button></div>';
+    }
+    function renderMomentPool() {
+      $("momentPoolList").innerHTML = state.momentPool.length ? state.momentPool.map((item, index) => renderMomentPoolItem(item, index)).join("") : '<div class="empty">朋友圈池还没有内容。可以新增，也可以拖拽素材到池子。</div>';
+    }
+    function renderMomentPoolItem(item, index) {
+      const materials = Array.isArray(item.materials) ? item.materials : [];
+      return '<article class="pool-card"><div class="pool-card-head"><strong>池内容 ' + (index + 1) + '</strong><span class="pool-meta">素材 ' + materials.length + ' 个</span></div><label>朋友圈文字<textarea data-moment-pool-raw="' + escapeAttr(item.id) + '" placeholder="可只放素材，也可写朋友圈文字">' + escapeHtml(item.rawContent || "") + '</textarea></label><label>备注<input data-moment-pool-remark="' + escapeAttr(item.id) + '" value="' + escapeAttr(item.remark || "") + '" placeholder="内部备注，可不填" /></label><div class="row"><button type="button" data-moment-use-pool="' + escapeAttr(item.id) + '">加入当天</button><button type="button" data-moment-pick-pool-upload="' + escapeAttr(item.id) + '">上传素材</button><button class="danger" type="button" data-moment-delete-pool="' + escapeAttr(item.id) + '">删除</button><input class="hidden-file-input" type="file" multiple data-moment-upload-pool="' + escapeAttr(item.id) + '" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></div><div class="drop-zone" data-moment-drop-pool="' + escapeAttr(item.id) + '">拖拽素材到这条池内容</div><div class="material-list">' + (materials.length ? materials.map((material, materialIndex) => renderMomentPoolMaterial(item.id, material, materialIndex)).join("") : '<div class="empty">还没有素材。</div>') + '</div></article>';
+    }
+    function renderMomentPoolMaterial(poolId, material, index) {
+      return '<div class="material-row"><input data-moment-pool-material-name="' + escapeAttr(poolId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.name || "") + '" placeholder="素材名称" /><select data-moment-pool-material-type="' + escapeAttr(poolId) + '" data-material-index="' + index + '"><option value="image"' + (material.type === "image" ? " selected" : "") + '>图片</option><option value="video"' + (material.type === "video" ? " selected" : "") + '>视频</option><option value="file"' + (material.type === "file" ? " selected" : "") + '>文件</option></select><input data-moment-pool-material-url="' + escapeAttr(poolId) + '" data-material-index="' + index + '" value="' + escapeAttr(material.url || "") + '" placeholder="https:// 或 data:" /><button class="danger" data-moment-remove-pool-material="' + escapeAttr(poolId) + '" data-material-index="' + index + '">删除</button></div>';
+    }
+    function findMomentPlan(id) {
+      return state.momentPlans.find((item) => item.id === id);
+    }
+    function findMomentPoolItem(id) {
+      return state.momentPool.find((item) => item.id === id);
+    }
+    function hasMomentContent(item) {
+      return Boolean(String(item?.rawContent || "").trim() || (Array.isArray(item?.materials) && item.materials.some((material) => material.url)));
+    }
+    function createMomentPoolItem(input) {
+      const now = new Date().toISOString();
+      return { id: crypto.randomUUID(), rawContent: input?.rawContent || "", materials: Array.isArray(input?.materials) ? input.materials : [], remark: input?.remark || "", createdAt: now, updatedAt: now };
+    }
+    function momentPoolItemToPlan(poolItem) {
+      const now = new Date().toISOString();
+      return { id: crypto.randomUUID(), date: momentSelectedDate, rawContent: poolItem.rawContent || "", materials: (poolItem.materials || []).map((material) => ({ ...material, id: crypto.randomUUID() })), status: "active", remark: poolItem.remark || "", createdAt: now, updatedAt: now };
+    }
+    function addMomentEntry() {
+      const now = new Date().toISOString();
+      state.momentPlans.push({ id: crypto.randomUUID(), date: momentSelectedDate, rawContent: "", materials: [], status: "active", remark: "", createdAt: now, updatedAt: now });
+      renderMomentPlannerAll();
+      setStatus("已新增一条朋友圈，填写后点保存规划");
+    }
+    async function uploadMomentMaterial(file) {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(api + "/api/admin/moments/materials/upload", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()).material;
+    }
+    async function saveMomentPlannerConfig(message) {
+      const invalid = state.momentPlans.find((item) => !String(item.date || "").trim() || !hasMomentContent(item));
+      if (invalid) {
+        momentSelectedDate = invalid.date || momentSelectedDate;
+        renderMomentPlannerAll();
+        setStatus("还有朋友圈内容为空，请补充文字或素材后再保存", true);
+        return false;
+      }
+      const res = await fetch(api + "/api/admin/config", {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-admin-config-scope": "moments" },
+        body: JSON.stringify({ momentPlans: state.momentPlans, momentPool: state.momentPool })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = await res.json();
+      state.momentPlans = Array.isArray(body.config?.momentPlans) ? body.config.momentPlans : [];
+      state.momentPool = Array.isArray(body.config?.momentPool) ? body.config.momentPool : [];
+      renderMomentPlannerAll();
+      setStatus(message || "朋友圈规划已保存");
+      return true;
+    }
+    async function saveMomentPoolConfig() {
+      const res = await fetch(api + "/api/admin/moments/pool", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ momentPool: state.momentPool })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = await res.json();
+      state.momentPool = Array.isArray(body.momentPool) ? body.momentPool : [];
+      renderMomentPool();
+      setStatus("朋友圈池已保存");
+    }
+    async function uploadFilesToMomentPlan(planId, files, autoSave) {
+      const plan = findMomentPlan(planId);
+      const fileList = Array.from(files || []);
+      if (!plan || !fileList.length) return;
+      setStatus("正在上传素材...");
+      try {
+        plan.materials = Array.isArray(plan.materials) ? plan.materials : [];
+        for (const file of fileList) plan.materials.push(await uploadMomentMaterial(file));
+        plan.updatedAt = new Date().toISOString();
+        renderMomentPlannerAll();
+        if (autoSave) await saveMomentPlannerConfig("素材已上传并保存");
+      } catch (error) {
+        setStatus("素材上传失败：" + error.message, true);
+      }
+    }
+    async function uploadFilesToMomentPool(poolId, files) {
+      const fileList = Array.from(files || []);
+      if (!fileList.length) return;
+      setStatus("正在上传到朋友圈池...");
+      try {
+        let item = poolId ? findMomentPoolItem(poolId) : undefined;
+        if (!item) {
+          item = createMomentPoolItem({});
+          state.momentPool.unshift(item);
+        }
+        item.materials = Array.isArray(item.materials) ? item.materials : [];
+        for (const file of fileList) item.materials.push(await uploadMomentMaterial(file));
+        item.updatedAt = new Date().toISOString();
+        await saveMomentPoolConfig();
+      } catch (error) {
+        setStatus("朋友圈池上传失败：" + error.message, true);
+      }
+    }
+    function toLocalDateString(date) {
+      return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+    }
+    function renderPrivateModels() {
+      state.privateModels = Array.isArray(state.privateModels) ? state.privateModels : [];
+      $("privateModelList").innerHTML = state.privateModels.length ? state.privateModels.map((model) => {
+        return '<article class="model-card"><div class="card-head"><div><h3>' + escapeHtml(model.name || "未命名模型") + ' <span class="pill' + (model.enabled ? "" : " off") + '">' + (model.kind === "image" ? "生图" : "文字") + '</span></h3><div class="muted">' + escapeHtml(model.provider || "-") + ' / ' + escapeHtml(model.model || "-") + '</div></div><div class="row"><button data-edit-private-model="' + escapeAttr(model.id) + '">编辑</button><button data-check-saved-private-model="' + escapeAttr(model.id) + '">检测</button><button class="danger" data-delete-private-model="' + escapeAttr(model.id) + '">删除</button></div></div><div class="model-status"><span class="pill' + (model.lastStatus === "success" ? "" : " off") + '">' + (model.lastStatus === "success" ? "检测通过" : "未通过/未检测") + '</span><span class="muted">' + escapeHtml(model.lastMessage || "保存后前端可选择使用私密模型") + '</span></div><code class="muted">' + escapeHtml(model.baseUrl || "") + '</code></article>';
+      }).join("") : '<div class="card"><strong>还没有私密模型</strong><div class="muted">添加文字模型和生图模型后，APP 前端可切换使用“王安实自用私密模型”。</div></div>';
+    }
+    function resetPrivateModelForm() {
+      $("modelEditingId").value = "";
+      $("modelKind").value = "language";
+      $("modelProvider").value = "openai";
+      $("modelName").value = "";
+      $("modelIdValue").value = "";
+      $("modelBaseUrl").value = "https://api.openai.com/v1";
+      $("modelApiKey").value = "";
+      $("modelEnabled").checked = true;
+    }
+    function privateModelInputFromForm(existing) {
+      return {
+        id: $("modelEditingId").value || undefined,
+        name: $("modelName").value.trim(),
+        kind: $("modelKind").value,
+        provider: $("modelProvider").value,
+        model: $("modelIdValue").value.trim(),
+        baseUrl: $("modelBaseUrl").value.trim(),
+        apiKey: $("modelApiKey").value.trim() || existing?.apiKey || "",
+        enabled: $("modelEnabled").checked,
+        createdAt: existing?.createdAt,
+        lastCheckedAt: existing?.lastCheckedAt,
+        lastStatus: existing?.lastStatus,
+        lastMessage: existing?.lastMessage
+      };
+    }
+    function addOrUpdatePrivateModel() {
+      const id = $("modelEditingId").value;
+      const existing = state.privateModels.find((item) => item.id === id);
+      const input = privateModelInputFromForm(existing);
+      if (!input.name || !input.model || !input.baseUrl || !input.apiKey) {
+        setStatus("请填写私密模型名称、模型 ID、Base URL 和 API Key", true);
+        return false;
+      }
+      const now = new Date().toISOString();
+      const model = { ...existing, ...input, id: id || crypto.randomUUID(), createdAt: existing?.createdAt || now, updatedAt: now };
+      state.privateModels = state.privateModels.filter((item) => item.id !== model.id);
+      state.privateModels.unshift(model);
+      renderPrivateModels();
+      resetPrivateModelForm();
+      setStatus("私密模型已保存到待发布，点击保存模型后生效");
+      return true;
+    }
+    async function checkPrivateModelFromForm(model) {
+      const res = await fetch(api + "/api/admin/private-models/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(model)
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+    async function checkAndMarkPrivateModel(model) {
+      const result = await checkPrivateModelFromForm(model);
+      model.lastCheckedAt = result.checkedAt;
+      model.lastStatus = result.ok ? "success" : "failed";
+      model.lastMessage = result.message;
+      model.updatedAt = new Date().toISOString();
+      renderPrivateModels();
+      setStatus(result.message, !result.ok);
+      return result;
+    }
+    async function savePrivateModels() {
+      const res = await fetch(api + "/api/admin/private-models", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ privateModels: state.privateModels })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = await res.json();
+      state.privateModels = Array.isArray(state.privateModels) ? state.privateModels : [];
+      renderPrivateModels();
+      setStatus("私密模型已保存到后台");
+      return body;
+    }
     function switchTab(tab) {
+      activeTab = tab;
       document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
       document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("active"));
       $("panel-" + tab).classList.add("active");
@@ -1601,17 +2328,151 @@ function renderAdminLandingHtml(publicBaseUrl) {
       }
       if (target.dataset.tab) switchTab(target.dataset.tab);
       if (target.id === "reloadTop" || target.id === "reloadUsage" || target.id === "reloadPrompts") loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
+      if (target.id === "reloadModels") loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
       if (target.id === "saveUpdate") saveUpdateToState().catch((error) => setStatus("保存失败：" + error.message, true));
       if (target.id === "savePrompts") saveConfig("提示词已保存发布").catch((error) => setStatus("保存失败：" + error.message, true));
       if (target.id === "keepPrompt") keepPrompt();
       if (target.id === "clearPrompt") clearPrompt();
       if (target.id === "saveUsers") saveConfig("授权列表已保存").catch((error) => setStatus("保存失败：" + error.message, true));
       if (target.id === "addUser") addUser();
+      if (target.id === "saveModels") savePrivateModels().catch((error) => setStatus("保存模型失败：" + error.message, true));
+      if (target.id === "addOrUpdateModel") addOrUpdatePrivateModel();
+      if (target.id === "resetPrivateModel") resetPrivateModelForm();
+      if (target.id === "checkPrivateModel") {
+        const existing = state.privateModels.find((item) => item.id === $("modelEditingId").value);
+        checkPrivateModelFromForm(privateModelInputFromForm(existing))
+          .then((result) => setStatus(result.message, !result.ok))
+          .catch((error) => setStatus("检测失败：" + error.message, true));
+      }
+      if (target.id === "momentReload") loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
+      if (target.id === "momentSave") saveMomentPlannerConfig().catch((error) => setStatus("保存失败：" + error.message, true));
+      if (target.id === "momentAddEntry") addMomentEntry();
+      if (target.id === "momentActivateAll") {
+        for (const item of momentEntriesForDate(momentSelectedDate)) item.status = "active";
+        renderMomentPlannerAll();
+        setStatus("当天内容已全部设为启用，点保存规划后生效");
+      }
+      if (target.id === "momentAddPoolItem") {
+        state.momentPool.unshift(createMomentPoolItem({}));
+        renderMomentPool();
+        saveMomentPoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
+      if (target.id === "momentPrevMonth") {
+        momentMonthCursor = new Date(momentMonthCursor.getFullYear(), momentMonthCursor.getMonth() - 1, 1);
+        renderMomentCalendar();
+      }
+      if (target.id === "momentNextMonth") {
+        momentMonthCursor = new Date(momentMonthCursor.getFullYear(), momentMonthCursor.getMonth() + 1, 1);
+        renderMomentCalendar();
+      }
+      if (target.id === "momentPoolDropZone") $("momentPoolUpload").click();
       if (target.dataset.editPrompt) {
         editingPromptId = target.dataset.editPrompt;
         fillPromptEditor();
         renderPrompts();
       }
+      if (target.dataset.editPrivateModel) {
+        const model = state.privateModels.find((item) => item.id === target.dataset.editPrivateModel);
+        if (model) {
+          $("modelEditingId").value = model.id;
+          $("modelKind").value = model.kind || "language";
+          $("modelProvider").value = model.provider || "openai";
+          $("modelName").value = model.name || "";
+          $("modelIdValue").value = model.model || "";
+          $("modelBaseUrl").value = model.baseUrl || "";
+          $("modelApiKey").value = "";
+          $("modelEnabled").checked = model.enabled !== false;
+          setStatus("正在编辑私密模型，API Key 留空会沿用原值");
+        }
+      }
+      if (target.dataset.checkSavedPrivateModel) {
+        const model = state.privateModels.find((item) => item.id === target.dataset.checkSavedPrivateModel);
+        if (model) checkAndMarkPrivateModel(model).catch((error) => setStatus("检测失败：" + error.message, true));
+      }
+      if (target.dataset.deletePrivateModel) {
+        if (!confirm("删除这个私密模型？")) return;
+        state.privateModels = state.privateModels.filter((item) => item.id !== target.dataset.deletePrivateModel);
+        renderPrivateModels();
+        setStatus("私密模型已删除，点击保存模型后生效");
+      }
+      const momentDate = target.dataset.momentDate;
+      if (momentDate) {
+        momentSelectedDate = momentDate;
+        renderMomentPlannerAll();
+      }
+      const momentAddMaterialId = target.dataset.momentAddMaterial;
+      if (momentAddMaterialId) {
+        const plan = findMomentPlan(momentAddMaterialId);
+        if (plan) {
+          plan.materials = Array.isArray(plan.materials) ? plan.materials : [];
+          plan.materials.push({ id: crypto.randomUUID(), name: "朋友圈素材", type: "image", url: "" });
+          plan.updatedAt = new Date().toISOString();
+          renderMomentEntries();
+        }
+      }
+      const momentRemoveMaterialId = target.dataset.momentRemoveMaterial;
+      if (momentRemoveMaterialId) {
+        const plan = findMomentPlan(momentRemoveMaterialId);
+        if (plan) {
+          plan.materials = (plan.materials || []).filter((_item, index) => String(index) !== String(target.dataset.materialIndex));
+          plan.updatedAt = new Date().toISOString();
+          renderMomentEntries();
+        }
+      }
+      const momentDeletePlanId = target.dataset.momentDeletePlan;
+      if (momentDeletePlanId) {
+        if (!confirm("删除这条朋友圈内容？")) return;
+        state.momentPlans = state.momentPlans.filter((item) => item.id !== momentDeletePlanId);
+        renderMomentPlannerAll();
+        setStatus("已删除，点保存规划后生效");
+      }
+      const momentDuplicatePlanId = target.dataset.momentDuplicatePlan;
+      if (momentDuplicatePlanId) {
+        const source = findMomentPlan(momentDuplicatePlanId);
+        if (source) {
+          const now = new Date().toISOString();
+          state.momentPlans.push({ ...source, id: crypto.randomUUID(), createdAt: now, updatedAt: now, materials: (source.materials || []).map((item) => ({ ...item, id: crypto.randomUUID() })) });
+          renderMomentPlannerAll();
+        }
+      }
+      const momentUsePoolId = target.dataset.momentUsePool;
+      if (momentUsePoolId) {
+        const item = findMomentPoolItem(momentUsePoolId);
+        if (item && hasMomentContent(item)) {
+          state.momentPlans.push(momentPoolItemToPlan(item));
+          renderMomentPlannerAll();
+          saveMomentPlannerConfig("已加入当天并保存").catch((error) => setStatus("加入当天失败：" + error.message, true));
+        }
+      }
+      const momentDeletePoolId = target.dataset.momentDeletePool;
+      if (momentDeletePoolId) {
+        if (!confirm("删除这条朋友圈池内容？")) return;
+        state.momentPool = state.momentPool.filter((item) => item.id !== momentDeletePoolId);
+        renderMomentPool();
+        saveMomentPoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
+      const momentRemovePoolMaterialId = target.dataset.momentRemovePoolMaterial;
+      if (momentRemovePoolMaterialId) {
+        const item = findMomentPoolItem(momentRemovePoolMaterialId);
+        if (item) {
+          item.materials = (item.materials || []).filter((_material, index) => String(index) !== String(target.dataset.materialIndex));
+          item.updatedAt = new Date().toISOString();
+          renderMomentPool();
+          saveMomentPoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+        }
+      }
+      const pickMomentUpload = target.closest("[data-moment-pick-upload], [data-moment-drop-material]");
+      if (pickMomentUpload) {
+        const planId = pickMomentUpload.dataset.momentPickUpload || pickMomentUpload.dataset.momentDropMaterial;
+        const input = Array.from(document.querySelectorAll("[data-moment-upload-material]")).find((item) => item.dataset.momentUploadMaterial === planId);
+        if (input) input.click();
+      }
+      const pickMomentPoolUpload = target.closest("[data-moment-pick-pool-upload]");
+      if (pickMomentPoolUpload) {
+        const input = Array.from(document.querySelectorAll("[data-moment-upload-pool]")).find((item) => item.dataset.momentUploadPool === pickMomentPoolUpload.dataset.momentPickPoolUpload);
+        if (input) input.click();
+      }
+      if (target.dataset.momentOpenPool) document.querySelector(".pool-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
       if (target.dataset.toggleUser) {
         const user = state.authorizedUsers.find((item) => item.id === target.dataset.toggleUser);
         if (user) { user.enabled = !user.enabled; user.updatedAt = new Date().toISOString(); renderUsers(); setStatus("授权状态已修改，点击保存授权后生效"); }
@@ -1629,7 +2490,118 @@ function renderAdminLandingHtml(publicBaseUrl) {
         renderUsage();
       }
     });
+    document.body.addEventListener("input", (event) => {
+      const target = event.target;
+      const rawId = target.dataset.momentPlanRaw;
+      const remarkId = target.dataset.momentPlanRemark;
+      const materialNameId = target.dataset.momentMaterialName;
+      const materialUrlId = target.dataset.momentMaterialUrl;
+      const poolRawId = target.dataset.momentPoolRaw;
+      const poolRemarkId = target.dataset.momentPoolRemark;
+      const poolMaterialNameId = target.dataset.momentPoolMaterialName;
+      const poolMaterialUrlId = target.dataset.momentPoolMaterialUrl;
+      if (rawId) {
+        const plan = findMomentPlan(rawId);
+        if (plan) { plan.rawContent = target.value.trim(); plan.updatedAt = new Date().toISOString(); }
+      }
+      if (remarkId) {
+        const plan = findMomentPlan(remarkId);
+        if (plan) { plan.remark = target.value.trim(); plan.updatedAt = new Date().toISOString(); }
+      }
+      if (materialNameId || materialUrlId) {
+        const plan = findMomentPlan(materialNameId || materialUrlId);
+        const material = plan?.materials?.[Number(target.dataset.materialIndex)];
+        if (materialNameId && material) material.name = target.value.trim();
+        if (materialUrlId && material) material.url = target.value.trim();
+        if (plan) plan.updatedAt = new Date().toISOString();
+      }
+      if (poolRawId || poolRemarkId) {
+        const item = findMomentPoolItem(poolRawId || poolRemarkId);
+        if (poolRawId && item) item.rawContent = target.value.trim();
+        if (poolRemarkId && item) item.remark = target.value.trim();
+        if (item) item.updatedAt = new Date().toISOString();
+      }
+      if (poolMaterialNameId || poolMaterialUrlId) {
+        const item = findMomentPoolItem(poolMaterialNameId || poolMaterialUrlId);
+        const material = item?.materials?.[Number(target.dataset.materialIndex)];
+        if (poolMaterialNameId && material) material.name = target.value.trim();
+        if (poolMaterialUrlId && material) material.url = target.value.trim();
+        if (item) item.updatedAt = new Date().toISOString();
+      }
+      if (rawId || materialUrlId) renderMomentCalendar();
+    });
+    document.body.addEventListener("change", async (event) => {
+      const target = event.target;
+      const statusId = target.dataset.momentPlanStatus;
+      if (statusId) {
+        const plan = findMomentPlan(statusId);
+        if (plan) { plan.status = target.value; plan.updatedAt = new Date().toISOString(); renderMomentCalendar(); }
+      }
+      const materialTypeId = target.dataset.momentMaterialType;
+      if (materialTypeId) {
+        const plan = findMomentPlan(materialTypeId);
+        const material = plan?.materials?.[Number(target.dataset.materialIndex)];
+        if (material) material.type = target.value;
+        if (plan) plan.updatedAt = new Date().toISOString();
+      }
+      const poolMaterialTypeId = target.dataset.momentPoolMaterialType;
+      if (poolMaterialTypeId) {
+        const item = findMomentPoolItem(poolMaterialTypeId);
+        const material = item?.materials?.[Number(target.dataset.materialIndex)];
+        if (material) material.type = target.value;
+        if (item) {
+          item.updatedAt = new Date().toISOString();
+          await saveMomentPoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+        }
+      }
+      const uploadId = target.dataset.momentUploadMaterial;
+      if (uploadId) {
+        await uploadFilesToMomentPlan(uploadId, target.files, true);
+        target.value = "";
+      }
+      const uploadPoolId = target.dataset.momentUploadPool;
+      if (uploadPoolId) {
+        await uploadFilesToMomentPool(uploadPoolId, target.files);
+        target.value = "";
+      }
+      if (target.id === "momentPoolUpload") {
+        await uploadFilesToMomentPool("", target.files);
+        target.value = "";
+      }
+    });
+    document.body.addEventListener("focusout", (event) => {
+      const target = event.target;
+      if (target.dataset.momentPoolRaw || target.dataset.momentPoolRemark || target.dataset.momentPoolMaterialName || target.dataset.momentPoolMaterialUrl) {
+        saveMomentPoolConfig().catch((error) => setStatus("朋友圈池保存失败：" + error.message, true));
+      }
+    });
+    document.body.addEventListener("dragover", (event) => {
+      const zone = event.target.closest("[data-moment-drop-material], [data-moment-drop-pool], #momentPoolDropZone");
+      if (!zone) return;
+      event.preventDefault();
+      zone.classList.add("drag-over");
+      zone.closest("[data-moment-plan-card]")?.classList.add("drag-over");
+    });
+    document.body.addEventListener("dragleave", (event) => {
+      const zone = event.target.closest("[data-moment-drop-material], [data-moment-drop-pool], #momentPoolDropZone");
+      if (!zone || (event.relatedTarget && zone.contains(event.relatedTarget))) return;
+      zone.classList.remove("drag-over");
+      zone.closest("[data-moment-plan-card]")?.classList.remove("drag-over");
+    });
+    document.body.addEventListener("drop", async (event) => {
+      const zone = event.target.closest("[data-moment-drop-material], [data-moment-drop-pool], #momentPoolDropZone");
+      if (!zone) return;
+      event.preventDefault();
+      zone.classList.remove("drag-over");
+      zone.closest("[data-moment-plan-card]")?.classList.remove("drag-over");
+      if (zone.dataset.momentDropMaterial) {
+        await uploadFilesToMomentPlan(zone.dataset.momentDropMaterial, event.dataTransfer?.files, true);
+      } else {
+        await uploadFilesToMomentPool(zone.dataset.momentDropPool || "", event.dataTransfer?.files);
+      }
+    });
     loadConfig().catch((error) => setStatus("读取失败：" + error.message, true));
+    switchTab(activeTab);
   </script>
 </body>
 </html>`;

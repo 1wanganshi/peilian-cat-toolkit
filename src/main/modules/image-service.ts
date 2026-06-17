@@ -1,6 +1,8 @@
 import { ModelManager } from './model-manager';
 import { PromptService } from './prompt-service';
 import { buildApiUrl, buildOpenAiCompatibleBaseUrls } from './api-url';
+import { AuthService } from './auth-service';
+import { RemoteConfigService } from './remote-config-service';
 
 export interface ImageReference {
   name: string;
@@ -10,6 +12,8 @@ export interface ImageReference {
 export class ImageService {
   private readonly modelManager = new ModelManager();
   private readonly promptService = new PromptService();
+  private readonly remoteConfigService = new RemoteConfigService();
+  private readonly authService = new AuthService(undefined, this.remoteConfigService);
 
   async generateIllustrationBase64(
     title: string,
@@ -54,12 +58,22 @@ export class ImageService {
     description: string,
     referenceImages: ImageReference[] = []
   ): Promise<string | undefined> {
+    const isMomentImage = title.trim() === '朋友圈配图';
+    const size = isMomentImage ? '1024x1024' : '768x1344';
+    if (await this.modelManager.getUsageMode() === 'private') {
+      const session = await this.authService.requireAuthorized();
+      const prompts = await this.buildImagePrompts(title, description, isMomentImage);
+      for (const prompt of prompts) {
+        const image = await this.remoteConfigService.generateImageWithPrivateModel(prompt, session.phone, referenceImages, size);
+        if (image) return image;
+      }
+      return undefined;
+    }
+
     const model = await this.modelManager.getEnabledModel('image');
     if (!model || model.provider === 'stability') return undefined;
 
     let lastError = '';
-    const isMomentImage = title.trim() === '朋友圈配图';
-    const size = isMomentImage ? '1024x1024' : '768x1344';
     try {
       for (const baseUrl of buildOpenAiCompatibleBaseUrls(model.baseUrl)) {
         for (const prompt of await this.buildImagePrompts(title, description, isMomentImage)) {

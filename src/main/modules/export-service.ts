@@ -65,13 +65,13 @@ export class ExportService {
 
   private scriptToMarkdown(script: VideoScript): string {
     const scenes = script.body
-      .map(
-        (scene) =>
-          `### 分镜 ${scene.scene}（${scene.duration}）\n\n${scene.content}\n\n画面：${scene.visual}\n\n字幕：${scene.textOverlay}`
-      )
+      .map((scene) => scene.content)
+      .filter(Boolean)
       .join('\n\n');
 
-    return `# ${script.title}\n\n## 开头钩子\n\n${script.hook}\n\n## 主体内容\n\n${scenes}\n\n## 结尾引导\n\n${script.ending}\n\n## 金句\n\n${script.keyPhrases.join('\n')}\n\n## 话题\n\n${script.hashtags.join(' ')}`;
+    return [script.title ? `# ${script.title}` : '', script.hook, scenes, script.ending, script.hashtags.join(' ')]
+      .filter(Boolean)
+      .join('\n\n');
   }
 
   private scriptToText(script: VideoScript): string {

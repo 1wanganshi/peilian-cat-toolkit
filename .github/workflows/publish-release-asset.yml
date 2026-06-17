@@ -51,7 +51,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release view "v$version" 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Fix moments generation so it uses the backend Moments Generate prompt, returns three selectable three-paragraph options first, and then generates AI images from the selected moments content with the Peilian Cat device reference."
+            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Add private/own model switching, fix script generation so model failures surface clearly instead of using preset templates, embed Moments planning into the main admin page, and preserve Moments pool materials across backend saves."
           }
 
       - name: Upload installer

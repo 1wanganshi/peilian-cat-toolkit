@@ -19,6 +19,7 @@ interface UsageInput {
 export class AuthService {
   private readonly filePath: string;
   private readonly remoteConfigService: RemoteConfigService;
+  private readonly modelAdminPhones: Set<string>;
 
   constructor(
     filePath = join(process.env.PEILIAN_CAT_USER_DATA ?? app.getPath('userData'), 'auth-session.json'),
@@ -26,6 +27,12 @@ export class AuthService {
   ) {
     this.filePath = filePath;
     this.remoteConfigService = remoteConfigService;
+    this.modelAdminPhones = new Set(
+      (process.env.PEILIAN_MODEL_ADMIN_PHONES || '13365179393')
+        .split(',')
+        .map((phone) => this.normalizePhone(phone))
+        .filter(Boolean)
+    );
   }
 
   async getSession(): Promise<UserAuthSession | undefined> {
@@ -57,6 +64,12 @@ export class AuthService {
     throw new Error(session?.message || '请先用已授权手机号登录后再使用');
   }
 
+  async requireModelAdmin(): Promise<UserAuthSession> {
+    const session = await this.requireAuthorized();
+    if (this.isModelAdmin(session.phone)) return session;
+    throw new Error('当前账号无权查看或修改模型配置');
+  }
+
   async recordUsage(input: UsageInput): Promise<void> {
     const session = await this.requireAuthorized();
     await this.postUsage({
@@ -69,6 +82,10 @@ export class AuthService {
 
   normalizePhone(phone: string): string {
     return String(phone || '').replace(/[^\d]/gu, '');
+  }
+
+  isModelAdmin(phone: string): boolean {
+    return this.modelAdminPhones.has(this.normalizePhone(phone));
   }
 
   private async checkPhone(phone: string): Promise<UserLoginResult> {
@@ -106,6 +123,7 @@ export class AuthService {
         authorized: Boolean(body.authorized),
         checkedAt,
         message: body.message,
+        isModelAdmin: this.isModelAdmin(normalizedPhone),
         user: body.user
       };
     } catch (error) {

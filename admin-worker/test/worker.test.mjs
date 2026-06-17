@@ -30,8 +30,8 @@ test('public config endpoint returns prompts-only defaults', async () => {
   assert.equal(body.models, undefined);
   assert.equal(body.momentPlans, undefined);
   assert.equal(body.momentPool, undefined);
-  assert.equal(body.update.latestVersion, '0.1.7');
-  assert.match(body.update.downloadUrl, /v0\.1\.7\/Setup\.0\.1\.7\.exe/);
+  assert.equal(body.update.latestVersion, '0.1.8');
+  assert.match(body.update.downloadUrl, /v0\.1\.8\/Setup\.0\.1\.8\.exe/);
 });
 
 test('saved stale update config is promoted to current app release', async () => {
@@ -54,13 +54,13 @@ test('saved stale update config is promoted to current app release', async () =>
 
   const configResponse = await worker.fetch(new Request('https://example.com/api/config'), env);
   const configBody = await configResponse.json();
-  assert.equal(configBody.update.latestVersion, '0.1.7');
-  assert.match(configBody.update.downloadUrl, /v0\.1\.7\/Setup\.0\.1\.7\.exe/);
+  assert.equal(configBody.update.latestVersion, '0.1.8');
+  assert.match(configBody.update.downloadUrl, /v0\.1\.8\/Setup\.0\.1\.8\.exe/);
   assert.equal(configBody.update.force, true);
 
   const checkResponse = await worker.fetch(new Request('https://example.com/api/update/check?currentVersion=0.1.2'), env);
   const checkBody = await checkResponse.json();
-  assert.equal(checkBody.latestVersion, '0.1.7');
+  assert.equal(checkBody.latestVersion, '0.1.8');
   assert.equal(checkBody.hasUpdate, true);
 });
 
@@ -94,15 +94,18 @@ test('admin page uses browser basic auth challenge', async () => {
   assert.equal(authorized.status, 200);
   const html = await authorized.text();
   assert.match(html, /陪练猫云后台/);
-  assert.match(html, /href="\/admin\/moments"/);
   assert.match(html, /更新及授权/);
   assert.match(html, /提示词管理/);
   assert.match(html, /用户授权/);
   assert.match(html, /用户使用记录/);
-  assert.match(html, /朋友圈规划页面/);
-  assert.match(html, /iframe src="\/admin\/moments"/);
-  assert.doesNotMatch(html, /planList/);
-  assert.doesNotMatch(html, /materialUpload/);
+  assert.match(html, /大模型模块/);
+  assert.match(html, /id="panel-models"/);
+  assert.match(html, /id="panel-moments"/);
+  assert.match(html, /id="momentCalendar"/);
+  assert.match(html, /id="momentPoolList"/);
+  assert.match(html, /x-admin-config-scope/);
+  assert.doesNotMatch(html, /target="_blank"/);
+  assert.doesNotMatch(html, /iframe src="\/admin\/moments"/);
   assert.match(html, /moments-rewrite/);
   assert.match(html, /moments-generate/);
   assert.match(html, /video-script-generate/);
@@ -203,7 +206,7 @@ test('partial admin config update keeps authorization and usage data', async () 
     headers,
     body: JSON.stringify({
       update: {
-        latestVersion: '0.1.7',
+        latestVersion: '0.1.8',
         downloadUrl: 'https://example.com/new.exe',
         releaseNotes: 'new'
       }
@@ -215,7 +218,7 @@ test('partial admin config update keeps authorization and usage data', async () 
   assert.equal(save.status, 200);
 
   const body = await save.json();
-  assert.equal(body.config.update.latestVersion, '0.1.7');
+  assert.equal(body.config.update.latestVersion, '0.1.8');
   assert.equal(body.config.authorizedUsers.length, 1);
   assert.equal(body.config.authorizedUsers[0].phone, '13800138000');
   assert.equal(body.config.usageRecords.length, 1);
@@ -246,7 +249,7 @@ test('admin config update stores a recoverable backup before saving', async () =
       'x-admin-password': '12345678',
       'content-type': 'application/json'
     },
-    body: JSON.stringify({ update: { latestVersion: '0.1.7' } })
+    body: JSON.stringify({ update: { latestVersion: '0.1.8' } })
   }), {
     CONFIG: kv,
     PUBLIC_BASE_URL: 'https://example.com'
@@ -255,13 +258,13 @@ test('admin config update stores a recoverable backup before saving', async () =
 
   const latestBackup = JSON.parse(kv.dump().get('app:config:backup:latest'));
   assert.equal(latestBackup.config.authorizedUsers[0].phone, '13800138000');
-  assert.equal(latestBackup.config.update.latestVersion, '0.1.7');
+  assert.equal(latestBackup.config.update.latestVersion, '0.1.8');
 
   const timestampedBackupKeys = [...kv.dump().keys()].filter((key) => key.startsWith('app:config:backup:20'));
   assert.equal(timestampedBackupKeys.length, 1);
 });
 
-test('moment planner page renders standalone calendar manager', async () => {
+test('moment planner route redirects into main admin moments tab', async () => {
   const response = await worker.fetch(new Request('https://example.com/admin/moments', {
     headers: {
       authorization: `Basic ${btoa('admin:12345678')}`
@@ -270,21 +273,8 @@ test('moment planner page renders standalone calendar manager', async () => {
     CONFIG: createKv(),
     PUBLIC_BASE_URL: 'https://example.com'
   });
-  assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.match(html, /朋友圈规划/);
-  assert.match(html, /id="calendar"/);
-  assert.match(html, /添加一条朋友圈/);
-  assert.match(html, /data-drop-material/);
-  assert.match(html, /data-pick-upload/);
-  assert.match(html, /uploadFilesToPlan/);
-  assert.match(html, /朋友圈池/);
-  assert.match(html, /id="poolDropZone"/);
-  assert.match(html, /data-use-pool/);
-  assert.match(html, /data-upload-pool/);
-  assert.match(html, /data-open-pool/);
-  assert.match(html, /\/api\/admin\/moments\/pool/);
-  assert.match(html, /保存成功/);
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/admin?tab=moments');
 });
 
 test('admin can save moment pool while public config hides it', async () => {
@@ -333,6 +323,122 @@ test('admin can save moment pool while public config hides it', async () => {
   assert.equal(publicBody.momentPlans, undefined);
 });
 
+test('general admin config save preserves moment planning data', async () => {
+  const kv = createKv();
+  const env = {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  };
+  const headers = {
+    'x-admin-username': 'admin',
+    'x-admin-password': '12345678',
+    'content-type': 'application/json'
+  };
+
+  const seedResponse = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers: {
+      ...headers,
+      'x-admin-config-scope': 'moments'
+    },
+    body: JSON.stringify({
+      momentPlans: [
+        {
+          id: 'plan-1',
+          date: '2026-06-17',
+          rawContent: '今日朋友圈规划',
+          materials: [{ id: 'plan-m1', name: '规划图片', type: 'image', url: 'https://example.com/plan.jpg' }],
+          status: 'active'
+        }
+      ],
+      momentPool: [
+        {
+          id: 'pool-1',
+          rawContent: '池子内容',
+          materials: [{ id: 'pool-m1', name: '池子图', type: 'image', url: 'https://example.com/pool.jpg' }]
+        }
+      ]
+    })
+  }), env);
+  assert.equal(seedResponse.status, 200);
+
+  const saveGeneral = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      prompts: [
+        { id: 'p1', scenario: 'moments-generate', name: 'generate', template: 'generate {{idea}}', enabled: true }
+      ],
+      momentPlans: [],
+      momentPool: [],
+      update: { latestVersion: '0.2.0', downloadUrl: 'https://example.com/app.exe', releaseNotes: 'new' }
+    })
+  }), env);
+  assert.equal(saveGeneral.status, 200);
+
+  const configResponse = await worker.fetch(new Request('https://example.com/api/admin/config', { headers }), env);
+  const config = await configResponse.json();
+  assert.equal(config.update.latestVersion, '0.2.0');
+  assert.equal(config.momentPlans.length, 1);
+  assert.equal(config.momentPlans[0].materials[0].url, 'https://example.com/plan.jpg');
+  assert.equal(config.momentPool.length, 1);
+  assert.equal(config.momentPool[0].materials[0].url, 'https://example.com/pool.jpg');
+});
+
+test('moment scoped config save preserves general admin data', async () => {
+  const kv = createKv();
+  const env = {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  };
+  const headers = {
+    'x-admin-username': 'admin',
+    'x-admin-password': '12345678',
+    'content-type': 'application/json'
+  };
+
+  const saveGeneral = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      prompts: [
+        { id: 'p1', scenario: 'moments-generate', name: 'generate', template: 'generate {{idea}}', enabled: true }
+      ],
+      authorizedUsers: [{ phone: '13800138000', name: '测试用户', enabled: true }],
+      update: { latestVersion: '0.2.0', downloadUrl: 'https://example.com/app.exe', releaseNotes: 'new' }
+    })
+  }), env);
+  assert.equal(saveGeneral.status, 200);
+
+  const saveMoments = await worker.fetch(new Request('https://example.com/api/admin/config', {
+    method: 'PUT',
+    headers: {
+      ...headers,
+      'x-admin-config-scope': 'moments'
+    },
+    body: JSON.stringify({
+      prompts: [],
+      authorizedUsers: [],
+      update: { latestVersion: '0.0.1' },
+      momentPool: [
+        {
+          rawContent: '池子新内容',
+          materials: [{ id: 'pool-m1', name: '池子图', type: 'image', url: 'https://example.com/pool.jpg' }]
+        }
+      ]
+    })
+  }), env);
+  assert.equal(saveMoments.status, 200);
+
+  const configResponse = await worker.fetch(new Request('https://example.com/api/admin/config', { headers }), env);
+  const config = await configResponse.json();
+  assert.equal(config.update.latestVersion, '0.2.0');
+  assert.equal(config.authorizedUsers.length, 1);
+  assert.equal(config.prompts.length, 1);
+  assert.equal(config.momentPool.length, 1);
+  assert.equal(config.momentPool[0].materials[0].url, 'https://example.com/pool.jpg');
+});
+
 test('admin can update editable prompts and filters built-in prompt scenarios', async () => {
   const kv = createKv();
   const response = await worker.fetch(new Request('https://example.com/api/admin/config', {
@@ -344,12 +450,12 @@ test('admin can update editable prompts and filters built-in prompt scenarios', 
     },
     body: JSON.stringify({
       prompts: [
-        { id: 'p1', scenario: 'moments-rewrite', name: '?????', template: 'rewrite {{originalText}}', enabled: true },
+        { id: 'p1', scenario: 'moments-rewrite', name: '朋友圈改写', template: 'rewrite {{originalText}}', enabled: true },
         { id: 'p2', scenario: 'moments-generate', name: 'generate', template: 'generate {{idea}}', enabled: true },
-        { id: 'p3', scenario: 'image-generate', name: '?????', template: 'image prompt', enabled: true }
+        { id: 'p3', scenario: 'image-generate', name: '图片生成', template: 'image prompt', enabled: true }
       ],
       models: [{ id: 'm1', kind: 'language', apiKey: 'sk-secret' }],
-      update: { latestVersion: '0.2.0', downloadUrl: 'https://example.com/app.exe', releaseNotes: '??', force: false }
+      update: { latestVersion: '0.2.0', downloadUrl: 'https://example.com/app.exe', releaseNotes: 'new', force: false }
     })
   }), {
     CONFIG: kv,
@@ -367,10 +473,99 @@ test('admin can update editable prompts and filters built-in prompt scenarios', 
   assert.equal(publicBody.momentPool, undefined);
   assert.equal(publicBody.prompts.length, 2);
   assert.equal(publicBody.prompts[0].scenario, 'moments-rewrite');
-  assert.equal(publicBody.prompts[0].name, '?????');
+  assert.equal(publicBody.prompts[0].name, '朋友圈改写');
   assert.equal(publicBody.prompts[1].scenario, 'moments-generate');
   assert.equal(publicBody.prompts[1].name, 'generate');
   assert.equal(publicBody.update.latestVersion, '0.2.0');
+});
+
+test('private model admin config is stored but hidden from public config and status is sanitized', async () => {
+  const kv = createKv();
+  const env = {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  };
+  const headers = {
+    'x-admin-username': 'admin',
+    'x-admin-password': '12345678',
+    'content-type': 'application/json'
+  };
+
+  const save = await worker.fetch(new Request('https://example.com/api/admin/private-models', {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      privateModels: [
+        {
+          id: 'pm-language',
+          name: '王安实文字模型',
+          kind: 'language',
+          provider: 'custom',
+          model: 'text-model',
+          baseUrl: 'https://models.example.com/v1',
+          apiKey: 'sk-secret',
+          enabled: true
+        },
+        {
+          id: 'pm-image',
+          name: '王安实生图模型',
+          kind: 'image',
+          provider: 'custom',
+          model: 'image-model',
+          baseUrl: 'https://images.example.com/v1',
+          apiKey: 'img-secret',
+          enabled: true
+        }
+      ]
+    })
+  }), env);
+  assert.equal(save.status, 200);
+  const saveBody = await save.json();
+  assert.equal(saveBody.privateModels[0].apiKey, '********');
+  assert.equal(saveBody.status.languageAvailable, true);
+  assert.equal(saveBody.status.imageAvailable, true);
+
+  const publicResponse = await worker.fetch(new Request('https://example.com/api/config'), env);
+  const publicBody = await publicResponse.json();
+  assert.equal(publicBody.privateModels, undefined);
+  assert.equal(JSON.stringify(publicBody).includes('sk-secret'), false);
+
+  const statusResponse = await worker.fetch(new Request('https://example.com/api/models/private/status'), env);
+  const statusBody = await statusResponse.json();
+  assert.equal(statusBody.languageAvailable, true);
+  assert.equal(statusBody.imageAvailable, true);
+  assert.equal(JSON.stringify(statusBody).includes('secret'), false);
+});
+
+test('private model generation proxy requires an authorized phone', async () => {
+  const kv = createKv({
+    'app:config': JSON.stringify({
+      privateModels: [
+        {
+          id: 'pm-language',
+          name: '王安实文字模型',
+          kind: 'language',
+          provider: 'custom',
+          model: 'text-model',
+          baseUrl: 'https://models.example.com/v1',
+          apiKey: 'sk-secret',
+          enabled: true
+        }
+      ],
+      authorizedUsers: [{ phone: '13800138000', enabled: true }]
+    })
+  });
+
+  const denied = await worker.fetch(new Request('https://example.com/api/models/private/language/generate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-user-phone': '13900139000' },
+    body: JSON.stringify({ prompt: 'hello' })
+  }), {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  });
+
+  assert.equal(denied.status, 403);
 });
 
 test('moment plan can be saved with materials only', async () => {

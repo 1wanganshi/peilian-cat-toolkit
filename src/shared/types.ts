@@ -192,6 +192,8 @@ export type ModelKind = 'language' | 'image';
 
 export type ModelProvider = 'openai' | 'claude' | 'stability' | 'custom';
 
+export type ModelUsageMode = 'private' | 'own';
+
 export interface ModelConfig {
   id: string;
   name: string;
@@ -223,6 +225,21 @@ export interface ModelCheckResult {
   ok: boolean;
   message: string;
   checkedAt: string;
+}
+
+export interface PrivateModelStatus {
+  languageAvailable: boolean;
+  imageAvailable: boolean;
+  languageName?: string;
+  imageName?: string;
+  updatedAt?: string;
+}
+
+export interface ModelUsageSettings {
+  mode: ModelUsageMode;
+  privateStatus?: PrivateModelStatus;
+  ownLanguageAvailable: boolean;
+  ownImageAvailable: boolean;
 }
 
 export interface UpdateCheckResult {
@@ -309,6 +326,7 @@ export interface UserAuthSession {
   authorized: boolean;
   checkedAt: string;
   message?: string;
+  isModelAdmin?: boolean;
 }
 
 export interface UserLoginResult extends UserAuthSession {
@@ -387,6 +405,8 @@ export type ElectronApi = {
   saveModel: (input: ModelConfigInput) => Promise<ModelConfig>;
   deleteModel: (id: string) => Promise<void>;
   checkModel: (input: ModelConfigInput) => Promise<ModelCheckResult>;
+  getModelUsageSettings: () => Promise<ModelUsageSettings>;
+  setModelUsageMode: (mode: ModelUsageMode) => Promise<ModelUsageSettings>;
   getPromptConfigMeta: () => Promise<PromptConfigMeta>;
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;

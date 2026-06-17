@@ -521,6 +521,32 @@ textarea {
   padding: 14px;
 }
 
+.script-option-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.script-option-card {
+  cursor: pointer;
+}
+
+.script-option-card.active {
+  border-color: #2f7d6d;
+  box-shadow: inset 0 0 0 1px #2f7d6d;
+}
+
+.script-option-card p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.script-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -922,6 +948,40 @@ textarea {
 
 .prompt-status-grid strong {
   color: #24302f;
+  font-size: 20px;
+}
+
+.model-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.model-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.model-status-grid div {
+  display: grid;
+  gap: 6px;
+  min-height: 84px;
+  border: 1px solid #d8e6dc;
+  border-radius: 8px;
+  background: #f5fbf7;
+  padding: 12px 14px;
+}
+
+.model-status-grid span,
+.model-status-grid small {
+  color: #65736f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.model-status-grid strong {
+  color: #1f6658;
   font-size: 20px;
 }
 

@@ -8,6 +8,7 @@ import type {
   GenerateScriptRequest,
   HistoryQuery,
   ModelConfigInput,
+  ModelUsageMode,
   VideoScript
 } from '../shared/types';
 
@@ -40,6 +41,8 @@ contextBridge.exposeInMainWorld('electron', {
   saveModel: (input: ModelConfigInput) => ipcRenderer.invoke('save-model', input),
   deleteModel: (id: string) => ipcRenderer.invoke('delete-model', id),
   checkModel: (input: ModelConfigInput) => ipcRenderer.invoke('check-model', input),
+  getModelUsageSettings: () => ipcRenderer.invoke('get-model-usage-settings'),
+  setModelUsageMode: (mode: ModelUsageMode) => ipcRenderer.invoke('set-model-usage-mode', mode),
   generateTodayTopics: (forceRefresh?: boolean) => ipcRenderer.invoke('generate-today-topics', forceRefresh),
   getPromptConfigMeta: () => ipcRenderer.invoke('get-prompt-config-meta'),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),

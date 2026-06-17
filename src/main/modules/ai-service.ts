@@ -11,8 +11,10 @@ import type {
   VideoTopic
 } from '../../shared/types';
 import { buildApiUrl, buildOpenAiCompatibleBaseUrls } from './api-url';
+import { AuthService } from './auth-service';
 import { ModelManager } from './model-manager';
 import { PromptService } from './prompt-service';
+import { RemoteConfigService } from './remote-config-service';
 
 export const PEILIAN_MOMENT_IMAGE_SCENE_GUIDE = `陪练猫固定生图设定：
 陪练猫是一款家庭英语启蒙互动设备，由白色便携主机和儿童话筒组成，连接电视、显示器或投影使用。孩子手持话筒，对着大屏里的 AI 老师、卡通角色、英语游戏和绘本内容进行跟读、对话、闯关和唱跳。画面风格要温馨、明亮、亲子友好，突出 AI 陪练、智能纠音、大屏护眼、游戏化学习和孩子主动开口说英语。
@@ -34,6 +36,8 @@ export const PEILIAN_MOMENT_IMAGE_SCENE_GUIDE = `陪练猫固定生图设定：
 export class AiService {
   private readonly modelManager = new ModelManager();
   private readonly promptService = new PromptService();
+  private readonly remoteConfigService = new RemoteConfigService();
+  private readonly authService = new AuthService(undefined, this.remoteConfigService);
 
   async generateTopics(topic: string, hotContent: HotContent[]): Promise<VideoTopic[]> {
     const generated = await this.generateJsonWithLanguageModel<VideoTopic[]>(
@@ -102,43 +106,7 @@ export class AiService {
       if (generated) return generated;
     }
 
-    return this.fallbackVideoScript(topic, duration, requirements);
-  }
-
-  private fallbackVideoScript(topic: VideoTopic | TodayVideoTopic, duration: number, requirements?: string): VideoScript {
-    const middleEnd = duration <= 15 ? '11-14秒' : duration <= 30 ? '18-26秒' : '32-54秒';
-    return {
-      title: topic.title,
-      hook: `先别划走，${topic.title.replace(/[。！？!?]$/u, '')}，真正关键的是第一步。`,
-      body: [
-        {
-          scene: 1,
-          duration: '0-3秒',
-          content: '用一句反常识观点抛出矛盾，告诉观众这条内容能帮他们少走弯路。',
-          visual: '人物正对镜头，字幕快速弹出关键词，背景保持干净。',
-          textOverlay: '90%的人第一步就做错了'
-        },
-        {
-          scene: 2,
-          duration: duration <= 15 ? '3-10秒' : '3-18秒',
-          content: `拆解选题核心：${this.topicReason(topic)} 结合一个生活化例子讲清楚问题。`,
-          visual: '左侧人物讲解，右侧出现三点式清单。',
-          textOverlay: '痛点 / 原因 / 正确做法'
-        },
-        {
-          scene: 3,
-          duration: middleEnd,
-          content: requirements?.trim()
-            ? `补充用户要求：${requirements.trim()}。给出可直接照做的行动步骤。`
-            : '给出一套可直接照做的行动步骤，让观众看完能立刻执行。',
-          visual: '步骤卡片逐条出现，配合轻微放大强调重点。',
-          textOverlay: '今天就能用的3步'
-        }
-      ],
-      ending: '如果你也遇到这个问题，先收藏，下一条我把模板直接拆给你。',
-      keyPhrases: ['先解决方向，再追求技巧', '可执行，比看起来高级更重要'],
-      hashtags: ['#短视频脚本', '#内容创作', '#爆款选题']
-    };
+    throw new Error('短视频脚本没有调用到可用大模型，请在模型设置中启用文字大模型，或检查“王安实自用私密模型”后台配置。');
   }
 
   private normalizeVideoScriptResponse(
@@ -187,9 +155,9 @@ export class AiService {
 
     return {
       title: this.textValue(value.title) || topic.title,
-      hook: this.textValue(value.hook) || body[0]?.content.slice(0, 80) || topic.title,
+      hook: this.richTextValue(value.hook) || body[0]?.content.slice(0, 80) || topic.title,
       body,
-      ending: this.textValue(value.ending),
+      ending: this.richTextValue(value.ending),
       keyPhrases: this.stringArray(value.keyPhrases),
       hashtags: this.stringArray(value.hashtags)
     };
@@ -249,6 +217,18 @@ export class AiService {
     if (typeof value === 'string') return value.trim();
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
     return '';
+  }
+
+  private richTextValue(value: unknown): string {
+    const direct = this.textValue(value);
+    if (direct) return direct;
+    if (!value || typeof value !== 'object') return '';
+    const record = value as Record<string, unknown>;
+    return this.textValue(record.content) ||
+      this.textValue(record.text) ||
+      this.textValue(record.value) ||
+      this.textValue(record.message) ||
+      '';
   }
 
   private stringArray(value: unknown): string[] {
@@ -619,6 +599,11 @@ ${PEILIAN_MOMENT_IMAGE_SCENE_GUIDE}
   }
 
   private async generateTextWithLanguageModel(prompt: string): Promise<string | undefined> {
+    if (await this.modelManager.getUsageMode() === 'private') {
+      const session = await this.authService.requireAuthorized();
+      return this.remoteConfigService.generateTextWithPrivateModel(prompt, session.phone);
+    }
+
     const model = await this.modelManager.getEnabledModel('language');
     if (!model) return undefined;
 

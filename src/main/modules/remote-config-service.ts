@@ -1,5 +1,10 @@
-import type { MomentMaterial, MomentPlan, PromptConfigMeta, PromptTemplate, TodayMomentPlansResult } from '../../shared/types';
+import type { MomentMaterial, MomentPlan, PrivateModelStatus, PromptConfigMeta, PromptTemplate, TodayMomentPlansResult } from '../../shared/types';
 import { buildApiUrl } from './api-url';
+
+export interface RemoteImageReference {
+  name: string;
+  base64: string;
+}
 
 export interface RemoteUpdateConfig {
   latestVersion: string;
@@ -105,6 +110,73 @@ export class RemoteConfigService {
     }
   }
 
+  async getPrivateModelStatus(): Promise<PrivateModelStatus> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(buildApiUrl(this.baseUrl(), '/api/models/private/status'), {
+        method: 'GET',
+        signal: controller.signal,
+        headers: { accept: 'application/json' }
+      });
+      if (!response.ok) return this.emptyPrivateModelStatus();
+      return this.normalizePrivateModelStatus(await response.json());
+    } catch {
+      return this.emptyPrivateModelStatus();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async generateTextWithPrivateModel(prompt: string, phone: string): Promise<string | undefined> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch(buildApiUrl(this.baseUrl(), '/api/models/private/language/generate'), {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'x-user-phone': phone
+        },
+        body: JSON.stringify({ prompt })
+      });
+      if (!response.ok) throw new Error(await this.responseError(response));
+      const body = await response.json() as { text?: string };
+      return typeof body.text === 'string' && body.text.trim() ? body.text.trim() : undefined;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async generateImageWithPrivateModel(
+    prompt: string,
+    phone: string,
+    referenceImages: RemoteImageReference[] = [],
+    size = '1024x1024'
+  ): Promise<string | undefined> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    try {
+      const response = await fetch(buildApiUrl(this.baseUrl(), '/api/models/private/image/generate'), {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'x-user-phone': phone
+        },
+        body: JSON.stringify({ prompt, size, referenceImages })
+      });
+      if (!response.ok) throw new Error(await this.responseError(response));
+      const body = await response.json() as { image?: string };
+      return typeof body.image === 'string' && body.image.trim() ? body.image.trim() : undefined;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   isEnabled(): boolean {
     return process.env.PEILIAN_REMOTE_CONFIG_DISABLED !== '1';
   }
@@ -133,6 +205,29 @@ export class RemoteConfigService {
       promptsUpdatedAt: typeof meta?.promptsUpdatedAt === 'string' ? meta.promptsUpdatedAt : '',
       promptCount: Number.isFinite(Number(meta?.promptCount)) ? Number(meta?.promptCount) : 0
     };
+  }
+
+  private normalizePrivateModelStatus(input: unknown): PrivateModelStatus {
+    const value = input as Partial<PrivateModelStatus>;
+    return {
+      languageAvailable: Boolean(value.languageAvailable),
+      imageAvailable: Boolean(value.imageAvailable),
+      languageName: typeof value.languageName === 'string' ? value.languageName : '',
+      imageName: typeof value.imageName === 'string' ? value.imageName : '',
+      updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : ''
+    };
+  }
+
+  private emptyPrivateModelStatus(): PrivateModelStatus {
+    return {
+      languageAvailable: false,
+      imageAvailable: false
+    };
+  }
+
+  private async responseError(response: Response): Promise<string> {
+    const body = await response.json().catch(() => undefined) as { error?: string } | undefined;
+    return body?.error || `HTTP ${response.status}`;
   }
 
   private defaultMeta(): PromptConfigMeta {

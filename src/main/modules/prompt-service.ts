@@ -105,10 +105,12 @@ const DEFAULT_TEMPLATES: Array<Omit<PromptTemplate, 'createdAt' | 'updatedAt'>> 
 任务：生成完整短视频脚本。
 
 输出要求：
-1. 开头 3 秒必须有钩子。
-2. 结构清晰：开头、主体、结尾。
-3. body 是分镜数组，每个分镜包含 scene, duration, content, visual, textOverlay。
-4. 标注关键金句 keyPhrases 和话题 hashtags。
+1. 必须严格围绕“选题”本身写，不允许改成其他主题，不允许输出泛化模板。
+2. 开头 3 秒必须有钩子，且 hook 必须是可直接使用的中文字符串，不要对象、不要解释。
+3. body 是分镜数组，每个分镜包含 scene, duration, content, visual, textOverlay，内容要像真人口播，不要模板话术。
+4. ending 必须是可直接使用的中文字符串，不要对象、不要 CTA 占位符。
+5. 标注关键金句 keyPhrases 和话题 hashtags。
+6. 不要输出“视频标题、提问型、冲突型、悬念型、关注我、点赞、评论”这种模板说明。
 
 只输出合法 JSON，字段为 title, hook, body, ending, keyPhrases, hashtags。`
   },

@@ -1,11 +1,12 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Select, Space, Switch, Tag, message } from 'antd';
+import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Radio, Select, Space, Switch, Tag, message } from 'antd';
 import { CheckCircle2, DownloadCloud, PlugZap, RefreshCw, Save, Trash2 } from 'lucide-react';
 import type {
   ModelConfig,
   ModelConfigInput,
   ModelKind,
+  ModelUsageSettings,
   ModelProvider,
   PromptConfigMeta,
   UpdateCheckResult,
@@ -45,6 +46,14 @@ export function BackendManagerPage(): JSX.Element {
           { key: 'models', label: '高级设置：模型管理', children: <ModelManagerPanel /> }
       ]}
     />
+    </div>
+  );
+}
+
+export function ModelSettingsPage(): JSX.Element {
+  return (
+    <div className="single-column">
+      <ModelUsagePanel />
     </div>
   );
 }
@@ -243,6 +252,107 @@ function BackendPromptSyncPanel(): JSX.Element {
           </Space>
         </Space>
       </Card>
+    </section>
+  );
+}
+
+function ModelUsagePanel(): JSX.Element {
+  const [settings, setSettings] = useState<ModelUsageSettings | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    void loadSettings();
+  }, []);
+
+  async function loadSettings(): Promise<void> {
+    setLoading(true);
+    setError('');
+    try {
+      setSettings(await window.electron.getModelUsageSettings());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取模型设置失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changeMode(mode: ModelUsageSettings['mode']): Promise<void> {
+    setLoading(true);
+    setError('');
+    try {
+      const next = await window.electron.setModelUsageMode(mode);
+      setSettings(next);
+      message.success(mode === 'private' ? '已切换为王安实自用私密模型' : '已切换为自己的模型');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换模型模式失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const status = settings?.privateStatus;
+  const usePrivate = settings?.mode === 'private';
+
+  return (
+    <section className="panel">
+      {error && <ErrorBanner message={error} />}
+      <Card title="模型使用方式" variant="borderless">
+        <Space direction="vertical" size={16} className="full-width">
+          <Radio.Group
+            className="model-mode-switch"
+            optionType="button"
+            buttonStyle="solid"
+            value={settings?.mode ?? 'own'}
+            disabled={loading}
+            onChange={(event) => void changeMode(event.target.value)}
+            options={[
+              { label: '使用王安实自用私密模型', value: 'private' },
+              { label: '添加并使用自己的模型', value: 'own' }
+            ]}
+          />
+          <div className="model-status-grid">
+            <div>
+              <span>私密文字模型</span>
+              <strong>{status?.languageAvailable ? '可用' : '未启用'}</strong>
+              {status?.languageName && <small>{status.languageName}</small>}
+            </div>
+            <div>
+              <span>私密生图模型</span>
+              <strong>{status?.imageAvailable ? '可用' : '未启用'}</strong>
+              {status?.imageName && <small>{status.imageName}</small>}
+            </div>
+            <div>
+              <span>自己的模型</span>
+              <strong>{settings?.ownLanguageAvailable || settings?.ownImageAvailable ? '已配置' : '未配置'}</strong>
+              <small>文字 {settings?.ownLanguageAvailable ? '可用' : '未启用'} / 生图 {settings?.ownImageAvailable ? '可用' : '未启用'}</small>
+            </div>
+          </div>
+          <Alert
+            type={usePrivate ? (status?.languageAvailable ? 'success' : 'warning') : (settings?.ownLanguageAvailable ? 'success' : 'warning')}
+            showIcon
+            message={usePrivate ? '当前使用私密模型' : '当前使用自己的模型'}
+            description={
+              usePrivate
+                ? '私密模型由后台大模型模块维护，前端只使用模型能力，不展示 API Key 或模型接口。'
+                : '自己的模型保存在本机，短视频脚本、朋友圈文案和图片生成会读取本机已启用的模型。'
+            }
+          />
+          <Button icon={<RefreshCw size={16} />} loading={loading} onClick={() => void loadSettings()}>
+            刷新状态
+          </Button>
+        </Space>
+      </Card>
+      {usePrivate ? (
+        <Card title="私密模型说明" variant="borderless">
+          <div className="model-note">
+            <CheckCircle2 size={18} />
+            <span>前端不会显示私密模型的接口和密钥。如果这里显示未启用，请到网页后台“大模型模块”配置文字模型和生图模型。</span>
+          </div>
+        </Card>
+      ) : (
+        <ModelManagerPanel />
+      )}
     </section>
   );
 }

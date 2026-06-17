@@ -346,11 +346,11 @@ function formatScript(result: Record<string, unknown>): string {
   const body = Array.isArray(result.body)
     ? result.body.map((scene) => {
       const item = scene as Record<string, unknown>;
-      return `分镜 ${item.scene ?? ''} ${item.duration ?? ''}\n${item.content ?? ''}\n画面：${item.visual ?? ''}\n字幕：${item.textOverlay ?? ''}`;
-    }).join('\n\n')
+      return String(item.content ?? '');
+    }).filter(Boolean).join('\n\n')
     : '';
   const tags = Array.isArray(result.hashtags) ? result.hashtags.join(' ') : '';
-  return [`标题：${result.title ?? ''}`, `开头：${result.hook ?? ''}`, body, `结尾：${result.ending ?? ''}`, tags].filter(Boolean).join('\n\n');
+  return [result.title, result.hook, body, result.ending, tags].filter(Boolean).join('\n\n');
 }
 
 function formatMoments(result: Record<string, unknown>): string {

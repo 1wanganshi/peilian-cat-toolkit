@@ -1,7 +1,7 @@
 import { Button, Card, Input, Space, Spin, Tag, message } from 'antd';
 import { CalendarDays, ChevronDown, ChevronUp, Download, RefreshCw, Sparkles } from 'lucide-react';
 import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { HistoryItem, GenerateScriptRequest, TodayVideoTopic, VideoScript, VideoTopic } from '../../shared/types';
 import { EmptyState } from '../components/empty-state';
@@ -11,21 +11,34 @@ type HistoryRouteState = {
   historyItem?: HistoryItem;
 };
 
+type ScriptOption = {
+  id: string;
+  topic: VideoTopic | TodayVideoTopic;
+  status: 'pending' | 'running' | 'done' | 'error';
+  script?: VideoScript;
+  error?: string;
+};
+
 export function ScriptGeneratorPage(): JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
+  const generationRunId = useRef(0);
   const [topic, setTopic] = useState('');
   const [requirements, setRequirements] = useState('');
   const [freeTopicOpen, setFreeTopicOpen] = useState(false);
   const [topics, setTopics] = useState<VideoTopic[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<VideoTopic | TodayVideoTopic | null>(null);
   const [todayTopics, setTodayTopics] = useState<TodayVideoTopic[]>([]);
-  const [script, setScript] = useState<VideoScript | null>(null);
+  const [scriptOptions, setScriptOptions] = useState<ScriptOption[]>([]);
+  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [todayLoading, setTodayLoading] = useState(false);
   const [todaySteps, setTodaySteps] = useState<Array<{ text: string; status: 'running' | 'done' }>>([]);
   const [error, setError] = useState('');
   const candidateTopics = todayTopics.length > 0 ? todayTopics : topics;
+  const targetTopics = candidateTopics.slice(0, 4);
+  const selectedScriptOption = scriptOptions.find((option) => option.id === selectedScriptId) ?? scriptOptions.find((option) => option.script);
+  const script = selectedScriptOption?.script ?? null;
 
   useEffect(() => {
     const item = (location.state as HistoryRouteState | null)?.historyItem;
@@ -33,8 +46,16 @@ export function ScriptGeneratorPage(): JSX.Element {
 
     const content = item.content as { request?: GenerateScriptRequest; result?: VideoScript } | undefined;
     if (content?.result) {
-      setScript(content.result);
-      setSelectedTopic(content.request?.topic ?? null);
+      const historyTopic = content.request?.topic ?? { title: content.result.title, heatScore: 0, reason: '', references: [] };
+      const historyOption: ScriptOption = {
+        id: getTopicKey(historyTopic, 0),
+        topic: historyTopic,
+        status: 'done',
+        script: content.result
+      };
+      setScriptOptions([historyOption]);
+      setSelectedScriptId(historyOption.id);
+      setSelectedTopic(historyTopic);
       setRequirements(content.request?.requirements ?? '');
       setTopics([]);
       setTodayTopics([]);
@@ -52,7 +73,8 @@ export function ScriptGeneratorPage(): JSX.Element {
 
     setLoading(true);
     setError('');
-    setScript(null);
+    setScriptOptions([]);
+    setSelectedScriptId(null);
     try {
       const result = await window.electron.searchHotTopics(topic);
       setTopics(result);
@@ -69,7 +91,8 @@ export function ScriptGeneratorPage(): JSX.Element {
     setTodayLoading(true);
     setTodaySteps([{ text: '正在连接系统推荐源', status: 'running' }]);
     setError('');
-    setScript(null);
+    setScriptOptions([]);
+    setSelectedScriptId(null);
     try {
       window.setTimeout(() => setTodaySteps([
         { text: '已连接系统推荐源', status: 'done' },
@@ -85,7 +108,7 @@ export function ScriptGeneratorPage(): JSX.Element {
         { text: '已连接系统推荐源', status: 'done' },
         { text: '已完成热点搜索', status: 'done' },
         { text: '已整理 4 个推荐选题', status: 'done' },
-        { text: '请选择一个选题生成内容', status: 'done' }
+        { text: '已准备生成 4 条脚本', status: 'done' }
       ]);
       setTodayTopics(result);
       setSelectedTopic(result[0] ?? null);
@@ -96,26 +119,49 @@ export function ScriptGeneratorPage(): JSX.Element {
     }
   }
 
-  async function generateScript(topicItem?: VideoTopic | TodayVideoTopic | null): Promise<void> {
-    const target = topicItem ?? selectedTopic;
-    if (!target) {
-      setError('请选择一个选题');
+  async function generateScripts(): Promise<void> {
+    const targets = targetTopics;
+    if (targets.length === 0) {
+      setError('请先生成选题');
       return;
     }
 
+    const runId = generationRunId.current + 1;
+    generationRunId.current = runId;
+    setScriptOptions(targets.map((item, index) => ({
+      id: getTopicKey(item, index),
+      topic: item,
+      status: 'pending'
+    })));
+    setSelectedScriptId(null);
     setLoading(true);
     setError('');
     try {
-      const result = await window.electron.generateScript({
-        topic: target,
-        duration: 30,
-        requirements
-      });
-      setScript(result);
+      await Promise.all(targets.map(async (item, index) => {
+        const id = getTopicKey(item, index);
+        setScriptOptions((current) => updateScriptOption(current, id, { status: 'running', error: undefined }));
+
+        try {
+          const result = await window.electron.generateScript({
+            topic: item,
+            duration: 30,
+            requirements
+          });
+          if (generationRunId.current !== runId) return;
+          setScriptOptions((current) => updateScriptOption(current, id, { status: 'done', script: result }));
+          setSelectedScriptId((current) => current ?? id);
+        } catch (err) {
+          if (generationRunId.current !== runId) return;
+          setScriptOptions((current) => updateScriptOption(current, id, {
+            status: 'error',
+            error: err instanceof Error ? err.message : '脚本生成失败，请稍后重试。'
+          }));
+        }
+      }));
     } catch (err) {
       setError(err instanceof Error ? err.message : '脚本生成失败，请稍后重试。');
     } finally {
-      setLoading(false);
+      if (generationRunId.current === runId) setLoading(false);
     }
   }
 
@@ -191,18 +237,17 @@ export function ScriptGeneratorPage(): JSX.Element {
           </Space>
         </Card>
 
-        <Card title="选择选题后生成内容" bordered={false}>
-          {!selectedTopic ? (
-            <EmptyState title="还未选择选题" description="先在右侧选择系统推荐选题，或打开自由选题生成自定义方向。" />
+        <Card title="生成短视频脚本" bordered={false}>
+          {targetTopics.length === 0 ? (
+            <EmptyState title="还未生成选题" description="先生成系统推荐选题，或打开自由选题生成自定义方向。" />
           ) : (
             <div className="selected-topic-panel">
-              <strong>{selectedTopic.title}</strong>
-              <p>{'coreIdea' in selectedTopic ? selectedTopic.coreIdea : selectedTopic.reason}</p>
-              {'heatScore' in selectedTopic && <Tag color="success">热度 {selectedTopic.heatScore}</Tag>}
+              <strong>已准备 {targetTopics.length} 个选题</strong>
+              <p>点击生成后会同时生成 {targetTopics.length} 条脚本。</p>
             </div>
           )}
           <Space direction="vertical" size={10} className="full-width">
-            <Button type="primary" icon={<Sparkles size={16} />} block loading={loading} onClick={() => generateScript()} disabled={!selectedTopic}>
+            <Button type="primary" icon={<Sparkles size={16} />} block loading={loading} onClick={() => generateScripts()} disabled={targetTopics.length === 0}>
               生成内容
             </Button>
             {script && <div className="loading-hint">内容已生成，可在右侧查看并导出。</div>}
@@ -212,15 +257,15 @@ export function ScriptGeneratorPage(): JSX.Element {
 
       <section className="panel">
         {error && <ErrorBanner message={error} />}
-        {loading && <Spin className="center-spin" tip="正在生成内容..." />}
+        {loading && scriptOptions.length === 0 && <Spin className="center-spin" tip="正在生成内容..." />}
         {!loading && !script && candidateTopics.length === 0 && (
           <EmptyState title="等待内容" description="可以先生成系统推荐选题，或打开自由选题后搜索。" />
         )}
 
-        {candidateTopics.length > 0 && !script && (
+        {candidateTopics.length > 0 && scriptOptions.length === 0 && (
           <div className="topic-grid">
-            {candidateTopics.map((item) => (
-              <Card key={'id' in item ? item.id : item.title} className={`topic-result-card ${selectedTopic?.title === item.title ? 'active' : ''}`} title={item.title} variant="borderless">
+            {targetTopics.map((item) => (
+              <Card key={'id' in item ? item.id : item.title} className="topic-result-card" title={item.title} variant="borderless">
                 <Space direction="vertical" size={12} className="full-width">
                   {'coreIdea' in item ? (
                     <>
@@ -240,9 +285,39 @@ export function ScriptGeneratorPage(): JSX.Element {
                       <Tag color="success">热度 {item.heatScore}</Tag>
                     </>
                   )}
-                  <Button type={selectedTopic?.title === item.title ? 'primary' : 'default'} onClick={() => setSelectedTopic(item)} disabled={loading}>
-                    {selectedTopic?.title === item.title ? '已选择' : '选择该选题'}
-                  </Button>
+                </Space>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {scriptOptions.length > 0 && (
+          <div className="script-option-grid">
+            {scriptOptions.map((option) => (
+              <Card
+                key={option.id}
+                className={`script-option-card ${selectedScriptOption?.id === option.id ? 'active' : ''}`}
+                title={option.script?.title || option.topic.title}
+                variant="borderless"
+                onClick={() => option.script && setSelectedScriptId(option.id)}
+              >
+                <Space direction="vertical" size={10} className="full-width">
+                  <div className="script-option-meta">
+                    <Tag color={scriptStatusColor(option.status)}>{scriptStatusText(option.status)}</Tag>
+                    {'heatScore' in option.topic && <Tag color="success">热度 {option.topic.heatScore}</Tag>}
+                  </div>
+                  {option.script ? (
+                    <p>{option.script.hook || option.script.body[0]?.content || ''}</p>
+                  ) : option.error ? (
+                    <p className="loading-hint">{option.error}</p>
+                  ) : (
+                    <p className="loading-hint">{option.status === 'running' ? '正在生成...' : '等待生成...'}</p>
+                  )}
+                  {option.script && (
+                    <Button type={selectedScriptOption?.id === option.id ? 'primary' : 'default'} onClick={() => setSelectedScriptId(option.id)}>
+                      {selectedScriptOption?.id === option.id ? '正在查看' : '查看这条'}
+                    </Button>
+                  )}
                 </Space>
               </Card>
             ))}
@@ -252,22 +327,16 @@ export function ScriptGeneratorPage(): JSX.Element {
         {script && (
           <Card title={script.title || '生成内容'} bordered={false}>
             <div className="script-result">
-              <h2>开头钩子</h2>
-              <p className="highlight">{script.hook}</p>
-              <h2>主体分镜</h2>
+              {script.hook && <p className="highlight">{script.hook}</p>}
               {(Array.isArray(script.body) ? script.body : []).map((scene, index) => (
-                <div className="scene" key={scene.scene}>
-                  <strong>分镜 {scene.scene || index + 1} · {scene.duration || '按内容节奏'}</strong>
+                <div className="scene" key={`${scene.scene}-${index}`}>
                   <p>{scene.content || ''}</p>
-                  <span>画面：{scene.visual || '按逐字稿节奏安排口播画面。'}</span>
-                  <span>字幕：{scene.textOverlay || '-'}</span>
                 </div>
               ))}
               {(!Array.isArray(script.body) || script.body.length === 0) && (
                 <p className="loading-hint">生成结果结构不完整，请点击重新生成。</p>
               )}
-              <h2>结尾引导</h2>
-              <p>{script.ending}</p>
+              {script.ending && <p>{script.ending}</p>}
               <div className="tag-row">{(Array.isArray(script.hashtags) ? script.hashtags : []).map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
               <Space wrap>
                 <Button icon={<Download size={16} />} onClick={() => exportScript('md')}>导出 MD</Button>
@@ -280,6 +349,28 @@ export function ScriptGeneratorPage(): JSX.Element {
       </section>
     </div>
   );
+}
+
+function getTopicKey(topic: VideoTopic | TodayVideoTopic, index: number): string {
+  return 'id' in topic ? topic.id : `${topic.title}-${index}`;
+}
+
+function updateScriptOption(options: ScriptOption[], id: string, patch: Partial<ScriptOption>): ScriptOption[] {
+  return options.map((option) => option.id === id ? { ...option, ...patch } : option);
+}
+
+function scriptStatusText(status: ScriptOption['status']): string {
+  if (status === 'done') return '已生成';
+  if (status === 'running') return '生成中';
+  if (status === 'error') return '失败';
+  return '等待';
+}
+
+function scriptStatusColor(status: ScriptOption['status']): string {
+  if (status === 'done') return 'green';
+  if (status === 'running') return 'blue';
+  if (status === 'error') return 'red';
+  return 'default';
 }
 
 function TopicProgress({ steps }: { steps: Array<{ text: string; status: 'running' | 'done' }> }): JSX.Element {

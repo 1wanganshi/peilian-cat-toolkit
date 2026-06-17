@@ -1,8 +1,17 @@
 import { app } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { ModelCheckResult, ModelConfig, ModelConfigInput, ModelKind } from '../../shared/types';
+import type {
+  ModelCheckResult,
+  ModelConfig,
+  ModelConfigInput,
+  ModelKind,
+  ModelUsageMode,
+  ModelUsageSettings,
+  PrivateModelStatus
+} from '../../shared/types';
 import { buildApiUrl, buildOpenAiCompatibleBaseUrls } from './api-url';
+import { RemoteConfigService } from './remote-config-service';
 
 const DEFAULT_BASE_URLS = {
   openai: 'https://api.openai.com/v1',
@@ -13,9 +22,12 @@ const DEFAULT_BASE_URLS = {
 
 export class ModelManager {
   private readonly filePath: string;
+  private readonly usageFilePath: string;
+  private readonly remoteConfigService = new RemoteConfigService();
 
   constructor(filePath = join(process.env.PEILIAN_CAT_USER_DATA ?? app.getPath('userData'), 'models.json')) {
     this.filePath = filePath;
+    this.usageFilePath = join(dirname(filePath), 'model-usage.json');
   }
 
   async listModels(): Promise<ModelConfig[]> {
@@ -80,6 +92,40 @@ export class ModelManager {
   async getEnabledModel(kind: ModelKind): Promise<ModelConfig | undefined> {
     const models = await this.readModels();
     return models.find((model) => model.kind === kind && model.enabled);
+  }
+
+  async getUsageMode(): Promise<ModelUsageMode> {
+    try {
+      const raw = await readFile(this.usageFilePath, 'utf8');
+      const saved = JSON.parse(raw.replace(/^\uFEFF/u, '')) as Partial<{ mode: ModelUsageMode }>;
+      return saved.mode === 'private' ? 'private' : 'own';
+    } catch {
+      return 'own';
+    }
+  }
+
+  async setUsageMode(mode: ModelUsageMode): Promise<ModelUsageSettings> {
+    await mkdir(dirname(this.usageFilePath), { recursive: true });
+    await writeFile(this.usageFilePath, JSON.stringify({ mode }, null, 2), 'utf8');
+    return this.getUsageSettings();
+  }
+
+  async getUsageSettings(): Promise<ModelUsageSettings> {
+    const [mode, models, privateStatus] = await Promise.all([
+      this.getUsageMode(),
+      this.readModels(),
+      this.remoteConfigService.getPrivateModelStatus()
+    ]);
+    return {
+      mode,
+      privateStatus,
+      ownLanguageAvailable: models.some((model) => model.kind === 'language' && model.enabled),
+      ownImageAvailable: models.some((model) => model.kind === 'image' && model.enabled)
+    };
+  }
+
+  async getPrivateStatus(): Promise<PrivateModelStatus> {
+    return this.remoteConfigService.getPrivateModelStatus();
   }
 
   private async runProviderCheck(input: ModelConfigInput): Promise<Omit<ModelCheckResult, 'checkedAt'>> {

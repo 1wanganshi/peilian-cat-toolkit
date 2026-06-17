@@ -9,6 +9,7 @@ import type { UserAuthSession } from '../shared/types';
 
 const ArticlePublisherPage = lazy(() => import('./pages/article-publisher-page').then((module) => ({ default: module.ArticlePublisherPage })));
 const BackendManagerPage = lazy(() => import('./pages/backend-manager-page').then((module) => ({ default: module.BackendManagerPage })));
+const ModelSettingsPage = lazy(() => import('./pages/backend-manager-page').then((module) => ({ default: module.ModelSettingsPage })));
 const HistoryPage = lazy(() => import('./pages/history-page').then((module) => ({ default: module.HistoryPage })));
 const MomentsPage = lazy(() => import('./pages/moments-page').then((module) => ({ default: module.MomentsPage })));
 const ScriptGeneratorPage = lazy(() => import('./pages/script-generator-page').then((module) => ({ default: module.ScriptGeneratorPage })));
@@ -55,8 +56,8 @@ export function App(): JSX.Element {
               <Route path="/moments" element={<MomentsPage />} />
               <Route path="/articles" element={<ArticlePublisherPage />} />
               <Route path="/history" element={<HistoryPage />} />
-              <Route path="/backend" element={<BackendManagerPage />} />
-              <Route path="/models" element={<Navigate to="/backend" replace />} />
+              <Route path="/backend" element={session.isModelAdmin ? <BackendManagerPage /> : <Navigate to="/scripts" replace />} />
+              <Route path="/models" element={<ModelSettingsPage />} />
             </Route>
           </Routes>
         </Suspense>
