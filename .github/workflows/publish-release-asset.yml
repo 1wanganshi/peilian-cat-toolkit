@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
     paths:
       - .github/workflows/publish-release-asset.yml
 
@@ -49,7 +51,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release view "v$version" 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Download the latest installer inside the app and launch it after download, without opening an external download page."
+            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Fix moments generation so it uses the backend Moments Generate prompt, returns three selectable three-paragraph options first, and then generates AI images from the selected moments content with the Peilian Cat device reference."
           }
 
       - name: Upload installer
