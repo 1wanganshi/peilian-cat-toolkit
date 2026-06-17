@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Radio, Select, Space, Switch, Tag, message } from 'antd';
+import { Alert, Button, Card, Collapse, Form, Input, Popconfirm, Select, Space, Switch, Tag, message } from 'antd';
 import { CheckCircle2, DownloadCloud, PlugZap, RefreshCw, Save, Trash2 } from 'lucide-react';
 import type {
   ModelConfig,
@@ -250,7 +250,9 @@ function BackendPromptSyncPanel(): JSX.Element {
 
 function ModelUsagePanel(): JSX.Element {
   const [settings, setSettings] = useState<ModelUsageSettings | undefined>();
+  const [selectedMode, setSelectedMode] = useState<ModelUsageSettings['mode']>('own');
   const [loading, setLoading] = useState(false);
+  const [syncingPrivate, setSyncingPrivate] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -261,7 +263,7 @@ function ModelUsagePanel(): JSX.Element {
     setLoading(true);
     setError('');
     try {
-      setSettings(await window.electron.getModelUsageSettings());
+      applySettings(await window.electron.getModelUsageSettings());
     } catch (err) {
       setError(err instanceof Error ? err.message : '读取模型设置失败');
     } finally {
@@ -269,13 +271,25 @@ function ModelUsagePanel(): JSX.Element {
     }
   }
 
-  async function changeMode(mode: ModelUsageSettings['mode']): Promise<void> {
+  function applySettings(next: ModelUsageSettings): void {
+    setSettings(next);
+    setSelectedMode(next.mode);
+  }
+
+  function selectPrivateMode(): void {
+    setError('');
+    setSelectedMode('private');
+  }
+
+  async function selectOwnMode(): Promise<void> {
     setLoading(true);
     setError('');
     try {
-      const next = await window.electron.setModelUsageMode(mode);
-      setSettings(next);
-      message.success(mode === 'private' ? '已切换为王安实自用私密模型' : '已切换为自己的模型');
+      if (typeof window.electron.setModelUsageMode !== 'function') {
+        throw new Error('当前 APP 主程序接口未更新，请先安装最新版本并重启 APP。');
+      }
+      applySettings(await window.electron.setModelUsageMode('own'));
+      message.success('已切换为自己的模型');
     } catch (err) {
       setError(err instanceof Error ? err.message : '切换模型模式失败');
     } finally {
@@ -283,26 +297,59 @@ function ModelUsagePanel(): JSX.Element {
     }
   }
 
+  async function syncPrivateModels(): Promise<void> {
+    setSyncingPrivate(true);
+    setError('');
+    try {
+      let next: ModelUsageSettings;
+      if (typeof window.electron.syncPrivateModelsFromBackend === 'function') {
+        next = await window.electron.syncPrivateModelsFromBackend();
+      } else {
+        const current = await window.electron.getModelUsageSettings();
+        if (!current.privateStatus?.languageAvailable && !current.privateStatus?.imageAvailable) {
+          throw new Error('后台“大模型模块”暂未启用可用的私密大模型，请先在网页后台保存并检测通过。');
+        }
+        if (typeof window.electron.setModelUsageMode !== 'function') {
+          throw new Error('当前 APP 主程序接口未更新，请先安装最新版本并重启 APP。');
+        }
+        next = await window.electron.setModelUsageMode('private');
+      }
+      applySettings(next);
+      setSelectedMode('private');
+      message.success('已同步后台私密大模型');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '同步后台私密大模型失败');
+    } finally {
+      setSyncingPrivate(false);
+    }
+  }
+
   const status = settings?.privateStatus;
   const usePrivate = settings?.mode === 'private';
+  const privateSelected = selectedMode === 'private';
+  const privateSynced = usePrivate && Boolean(settings?.privateSyncedAt || status?.languageAvailable || status?.imageAvailable);
 
   return (
     <section className="panel">
       {error && <ErrorBanner message={error} />}
       <Card title="模型使用方式" variant="borderless">
         <Space direction="vertical" size={16} className="full-width">
-          <Radio.Group
-            className="model-mode-switch"
-            optionType="button"
-            buttonStyle="solid"
-            value={settings?.mode ?? 'own'}
-            disabled={loading}
-            onChange={(event) => void changeMode(event.target.value)}
-            options={[
-              { label: '使用王安实自用私密模型', value: 'private' },
-              { label: '添加并使用自己的模型', value: 'own' }
-            ]}
-          />
+          <div className="model-mode-switch">
+            <Button
+              type={privateSelected ? 'primary' : 'default'}
+              loading={syncingPrivate}
+              onClick={selectPrivateMode}
+            >
+              使用王安实自用私密大模型
+            </Button>
+            <Button
+              type={selectedMode === 'own' ? 'primary' : 'default'}
+              loading={loading && selectedMode === 'own'}
+              onClick={() => void selectOwnMode()}
+            >
+              添加并使用自己的模型
+            </Button>
+          </div>
           <div className="model-status-grid">
             <div>
               <span>私密文字模型</span>
@@ -321,21 +368,47 @@ function ModelUsagePanel(): JSX.Element {
             </div>
           </div>
           <Alert
-            type={usePrivate ? (status?.languageAvailable ? 'success' : 'warning') : (settings?.ownLanguageAvailable ? 'success' : 'warning')}
+            type={privateSelected ? (privateSynced ? 'success' : 'info') : (settings?.ownLanguageAvailable ? 'success' : 'warning')}
             showIcon
-            message={usePrivate ? '当前使用私密模型' : '当前使用自己的模型'}
+            message={privateSelected ? (privateSynced ? '已同步并使用私密大模型' : '等待同步后台私密大模型') : '当前使用自己的模型'}
             description={
-              usePrivate
-                ? '私密模型由后台大模型模块维护，前端只使用模型能力，不展示 API Key 或模型接口。'
+              privateSelected
+                ? '私密大模型由网页后台“大模型模块”维护；前端只同步可用状态和使用方式，不展示模型 ID、Base URL 或 API Key。'
                 : '自己的模型保存在本机，短视频脚本、朋友圈文案和图片生成会读取本机已启用的模型。'
             }
           />
+          {privateSelected && (
+            <div className={`private-sync-panel ${syncingPrivate ? 'syncing' : ''} ${privateSynced ? 'synced' : ''}`}>
+              <div className="private-sync-visual" aria-hidden="true">
+                <span />
+                <span />
+                <CheckCircle2 size={28} />
+              </div>
+              <div className="private-sync-copy">
+                <strong>{privateSynced ? '后台私密大模型已同步' : '同步后台大模型到本机使用方式'}</strong>
+                <small>
+                  {privateSynced && settings?.privateSyncedAt
+                    ? `最近同步：${new Date(settings.privateSyncedAt).toLocaleString()}`
+                    : '点击后会读取后台“大模型模块”的可用状态，并把前端切换为“王安实自用私密大模型”。'}
+                </small>
+              </div>
+              <Button
+                type={privateSynced ? 'default' : 'primary'}
+                icon={privateSynced ? <CheckCircle2 size={16} /> : <DownloadCloud size={16} />}
+                loading={syncingPrivate}
+                disabled={privateSynced}
+                onClick={() => void syncPrivateModels()}
+              >
+                {privateSynced ? '已同步' : '一键同步'}
+              </Button>
+            </div>
+          )}
           <Button icon={<RefreshCw size={16} />} loading={loading} onClick={() => void loadSettings()}>
             刷新状态
           </Button>
         </Space>
       </Card>
-      {usePrivate ? (
+      {privateSelected ? (
         <Card title="私密模型说明" variant="borderless">
           <div className="model-note">
             <CheckCircle2 size={18} />

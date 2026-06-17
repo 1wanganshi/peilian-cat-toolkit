@@ -238,6 +238,7 @@ export interface PrivateModelStatus {
 export interface ModelUsageSettings {
   mode: ModelUsageMode;
   privateStatus?: PrivateModelStatus;
+  privateSyncedAt?: string;
   ownLanguageAvailable: boolean;
   ownImageAvailable: boolean;
 }
@@ -407,6 +408,7 @@ export type ElectronApi = {
   checkModel: (input: ModelConfigInput) => Promise<ModelCheckResult>;
   getModelUsageSettings: () => Promise<ModelUsageSettings>;
   setModelUsageMode: (mode: ModelUsageMode) => Promise<ModelUsageSettings>;
+  syncPrivateModelsFromBackend: () => Promise<ModelUsageSettings>;
   getPromptConfigMeta: () => Promise<PromptConfigMeta>;
   syncPromptTemplatesFromBackend: () => Promise<PromptSyncResult>;
   checkForUpdates: () => Promise<UpdateCheckResult>;

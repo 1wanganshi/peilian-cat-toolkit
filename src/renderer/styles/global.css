@@ -985,6 +985,72 @@ textarea {
   font-size: 20px;
 }
 
+.private-sync-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid #d8e6dc;
+  border-radius: 8px;
+  background: #f7fbf8;
+  padding: 14px;
+}
+
+.private-sync-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: #2e806f;
+}
+
+.private-sync-visual span {
+  position: absolute;
+  inset: 6px;
+  border: 2px solid rgba(46, 128, 111, 0.22);
+  border-top-color: #2e806f;
+  border-radius: 999px;
+  animation: private-sync-spin 1.2s linear infinite;
+}
+
+.private-sync-visual span:nth-child(2) {
+  inset: 12px;
+  animation-duration: 1.8s;
+  animation-direction: reverse;
+}
+
+.private-sync-panel.synced .private-sync-visual span {
+  animation: none;
+  border-color: rgba(46, 128, 111, 0.18);
+}
+
+.private-sync-panel:not(.syncing):not(.synced) .private-sync-visual span {
+  animation-play-state: paused;
+}
+
+.private-sync-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.private-sync-copy strong {
+  color: #24302f;
+  font-size: 16px;
+}
+
+.private-sync-copy small {
+  color: #65736f;
+  line-height: 1.5;
+}
+
+@keyframes private-sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .prompt-synced-list {
   display: flex;
   flex-wrap: wrap;

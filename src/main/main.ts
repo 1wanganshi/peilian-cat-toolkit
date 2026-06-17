@@ -300,6 +300,7 @@ function registerHandlers(): void {
   ipcMain.handle('check-model', async (_event, input) => modelManager.checkModel(input));
   ipcMain.handle('get-model-usage-settings', async () => modelManager.getUsageSettings());
   ipcMain.handle('set-model-usage-mode', async (_event, mode) => modelManager.setUsageMode(mode));
+  ipcMain.handle('sync-private-models-from-backend', async () => modelManager.syncPrivateModelsFromBackend());
   ipcMain.handle('get-prompt-config-meta', async () => promptService.getPromptConfigMeta());
   ipcMain.handle('sync-prompt-templates-from-backend', async () => promptService.syncRemoteTemplates());
   ipcMain.handle('check-for-updates', async () => remoteConfigService.checkUpdate(app.getVersion()));

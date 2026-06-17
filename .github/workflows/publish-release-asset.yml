@@ -51,7 +51,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release view "v$version" 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Move frontend model management into Update and Authorization advanced settings, remove the standalone Model Settings sidebar entry, and keep the old /models route redirecting safely."
+            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Add one-click sync for Wang Anshi private models in the frontend advanced model panel, verify the backend private model status before switching, and show a synced state after the backend model connection is saved locally."
           }
 
       - name: Upload installer

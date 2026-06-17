@@ -5,11 +5,11 @@ const ADMIN_CONFIG_SCOPE_HEADER = 'x-admin-config-scope';
 const MOMENTS_CONFIG_SCOPE = 'moments';
 const USER_PHONE_HEADER = 'x-user-phone';
 const CURRENT_APP_RELEASE = {
-  latestVersion: '0.1.9',
-  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.9/Setup.0.1.9.exe',
-  releaseNotes: '前端模型管理入口合并到“更新及授权”的“高级设置：模型管理”中；左侧不再单独显示“模型设置”，旧入口会自动跳转。',
+  latestVersion: '0.1.10',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.10/Setup.0.1.10.exe',
+  releaseNotes: '优化前端大模型模块：选择“王安实自用私密大模型”后显示同步动效和“一键同步”按钮，同步后台大模型成功后显示“已同步”；同时补强前后端私密模型联通检查。',
   force: false,
-  publishedAt: '2026-06-17T08:40:00.000Z'
+  publishedAt: '2026-06-17T08:55:00.000Z'
 };
 
 const DEFAULT_CONFIG = {

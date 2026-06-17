@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electron', {
   checkModel: (input: ModelConfigInput) => ipcRenderer.invoke('check-model', input),
   getModelUsageSettings: () => ipcRenderer.invoke('get-model-usage-settings'),
   setModelUsageMode: (mode: ModelUsageMode) => ipcRenderer.invoke('set-model-usage-mode', mode),
+  syncPrivateModelsFromBackend: () => ipcRenderer.invoke('sync-private-models-from-backend'),
   generateTodayTopics: (forceRefresh?: boolean) => ipcRenderer.invoke('generate-today-topics', forceRefresh),
   getPromptConfigMeta: () => ipcRenderer.invoke('get-prompt-config-meta'),
   syncPromptTemplatesFromBackend: () => ipcRenderer.invoke('sync-prompt-templates-from-backend'),

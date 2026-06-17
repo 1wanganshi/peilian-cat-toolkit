@@ -20,6 +20,11 @@ const DEFAULT_BASE_URLS = {
   custom: ''
 };
 
+interface StoredModelUsage {
+  mode?: ModelUsageMode;
+  privateSyncedAt?: string;
+}
+
 export class ModelManager {
   private readonly filePath: string;
   private readonly usageFilePath: string;
@@ -95,30 +100,40 @@ export class ModelManager {
   }
 
   async getUsageMode(): Promise<ModelUsageMode> {
-    try {
-      const raw = await readFile(this.usageFilePath, 'utf8');
-      const saved = JSON.parse(raw.replace(/^\uFEFF/u, '')) as Partial<{ mode: ModelUsageMode }>;
-      return saved.mode === 'private' ? 'private' : 'own';
-    } catch {
-      return 'own';
-    }
+    const saved = await this.readUsage();
+    return saved.mode === 'private' ? 'private' : 'own';
   }
 
   async setUsageMode(mode: ModelUsageMode): Promise<ModelUsageSettings> {
-    await mkdir(dirname(this.usageFilePath), { recursive: true });
-    await writeFile(this.usageFilePath, JSON.stringify({ mode }, null, 2), 'utf8');
+    const saved = await this.readUsage();
+    await this.writeUsage({ ...saved, mode });
     return this.getUsageSettings();
   }
 
-  async getUsageSettings(): Promise<ModelUsageSettings> {
-    const [mode, models, privateStatus] = await Promise.all([
+  async syncPrivateModelsFromBackend(): Promise<ModelUsageSettings> {
+    const privateStatus = await this.remoteConfigService.getPrivateModelStatus();
+    if (!privateStatus.languageAvailable && !privateStatus.imageAvailable) {
+      throw new Error('后台“大模型模块”暂未启用可用的私密大模型，请先在网页后台保存并检测通过。');
+    }
+
+    await this.writeUsage({
+      mode: 'private',
+      privateSyncedAt: new Date().toISOString()
+    });
+    return this.getUsageSettings(privateStatus);
+  }
+
+  async getUsageSettings(privateStatusInput?: PrivateModelStatus): Promise<ModelUsageSettings> {
+    const [mode, usage, models, privateStatus] = await Promise.all([
       this.getUsageMode(),
+      this.readUsage(),
       this.readModels(),
-      this.remoteConfigService.getPrivateModelStatus()
+      privateStatusInput ? Promise.resolve(privateStatusInput) : this.remoteConfigService.getPrivateModelStatus()
     ]);
     return {
       mode,
       privateStatus,
+      privateSyncedAt: usage.privateSyncedAt,
       ownLanguageAvailable: models.some((model) => model.kind === 'language' && model.enabled),
       ownImageAvailable: models.some((model) => model.kind === 'image' && model.enabled)
     };
@@ -327,6 +342,24 @@ export class ModelManager {
   private async writeModels(models: ModelConfig[]): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, JSON.stringify(models, null, 2), 'utf8');
+  }
+
+  private async readUsage(): Promise<StoredModelUsage> {
+    try {
+      const raw = await readFile(this.usageFilePath, 'utf8');
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/u, '')) as StoredModelUsage;
+      return {
+        mode: parsed.mode === 'private' ? 'private' : 'own',
+        privateSyncedAt: typeof parsed.privateSyncedAt === 'string' ? parsed.privateSyncedAt : undefined
+      };
+    } catch {
+      return { mode: 'own' };
+    }
+  }
+
+  private async writeUsage(usage: StoredModelUsage): Promise<void> {
+    await mkdir(dirname(this.usageFilePath), { recursive: true });
+    await writeFile(this.usageFilePath, JSON.stringify(usage, null, 2), 'utf8');
   }
 
   private normalizeBaseUrl(baseUrl: string): string {
