@@ -5,11 +5,11 @@ const ADMIN_CONFIG_SCOPE_HEADER = 'x-admin-config-scope';
 const MOMENTS_CONFIG_SCOPE = 'moments';
 const USER_PHONE_HEADER = 'x-user-phone';
 const CURRENT_APP_RELEASE = {
-  latestVersion: '0.1.11',
-  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.11/Setup.0.1.11.exe',
-  releaseNotes: '修复“今日朋友圈建议”读取大素材导致等待过长和 AbortError：后台今日规划改为轻量素材链接，前端并发生成文案并提供中文超时兜底提示。',
+  latestVersion: '0.1.12',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.12/Setup.0.1.12.exe',
+  releaseNotes: '修复新版 APP 已有后台实例时再次打开像“闪退”的问题：第二次启动会强制显示并聚焦主窗口，同时保留今日朋友圈建议提速修复。',
   force: false,
-  publishedAt: '2026-06-17T10:29:00.000Z'
+  publishedAt: '2026-06-17T11:32:00.000Z'
 };
 
 const DEFAULT_CONFIG = {

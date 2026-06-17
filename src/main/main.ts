@@ -42,8 +42,12 @@ if (!gotSingleInstanceLock) {
 }
 
 function focusMainWindow(): void {
-  if (!mainWindow) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
   mainWindow.focus();
 }
 
@@ -56,6 +60,7 @@ function createWindow(): void {
     title: '陪练猫工具包',
     icon: join(__dirname, '../../resources/peilian-cat-icon.ico'),
     backgroundColor: '#f6f4ef',
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
@@ -69,6 +74,16 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
+
+  const revealWindow = (): void => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
+  mainWindow.once('ready-to-show', revealWindow);
+  setTimeout(revealWindow, 1500).unref();
 
   mainWindow.on('closed', () => {
     mainWindow = undefined;

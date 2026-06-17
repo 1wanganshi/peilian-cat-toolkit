@@ -30,8 +30,8 @@ test('public config endpoint returns prompts-only defaults', async () => {
   assert.equal(body.models, undefined);
   assert.equal(body.momentPlans, undefined);
   assert.equal(body.momentPool, undefined);
-  assert.equal(body.update.latestVersion, '0.1.11');
-  assert.match(body.update.downloadUrl, /v0\.1\.11\/Setup\.0\.1\.11\.exe/);
+  assert.equal(body.update.latestVersion, '0.1.12');
+  assert.match(body.update.downloadUrl, /v0\.1\.12\/Setup\.0\.1\.12\.exe/);
 });
 
 test('saved stale update config is promoted to current app release', async () => {
@@ -54,13 +54,13 @@ test('saved stale update config is promoted to current app release', async () =>
 
   const configResponse = await worker.fetch(new Request('https://example.com/api/config'), env);
   const configBody = await configResponse.json();
-  assert.equal(configBody.update.latestVersion, '0.1.11');
-  assert.match(configBody.update.downloadUrl, /v0\.1\.11\/Setup\.0\.1\.11\.exe/);
+  assert.equal(configBody.update.latestVersion, '0.1.12');
+  assert.match(configBody.update.downloadUrl, /v0\.1\.12\/Setup\.0\.1\.12\.exe/);
   assert.equal(configBody.update.force, true);
 
   const checkResponse = await worker.fetch(new Request('https://example.com/api/update/check?currentVersion=0.1.2'), env);
   const checkBody = await checkResponse.json();
-  assert.equal(checkBody.latestVersion, '0.1.11');
+  assert.equal(checkBody.latestVersion, '0.1.12');
   assert.equal(checkBody.hasUpdate, true);
 });
 
@@ -207,7 +207,7 @@ test('partial admin config update keeps authorization and usage data', async () 
     headers,
     body: JSON.stringify({
       update: {
-        latestVersion: '0.1.11',
+        latestVersion: '0.1.12',
         downloadUrl: 'https://example.com/new.exe',
         releaseNotes: 'new'
       }
@@ -219,7 +219,7 @@ test('partial admin config update keeps authorization and usage data', async () 
   assert.equal(save.status, 200);
 
   const body = await save.json();
-  assert.equal(body.config.update.latestVersion, '0.1.11');
+  assert.equal(body.config.update.latestVersion, '0.1.12');
   assert.equal(body.config.authorizedUsers.length, 1);
   assert.equal(body.config.authorizedUsers[0].phone, '13800138000');
   assert.equal(body.config.usageRecords.length, 1);
@@ -250,7 +250,7 @@ test('admin config update stores a recoverable backup before saving', async () =
       'x-admin-password': '12345678',
       'content-type': 'application/json'
     },
-    body: JSON.stringify({ update: { latestVersion: '0.1.11' } })
+    body: JSON.stringify({ update: { latestVersion: '0.1.12' } })
   }), {
     CONFIG: kv,
     PUBLIC_BASE_URL: 'https://example.com'
@@ -259,7 +259,7 @@ test('admin config update stores a recoverable backup before saving', async () =
 
   const latestBackup = JSON.parse(kv.dump().get('app:config:backup:latest'));
   assert.equal(latestBackup.config.authorizedUsers[0].phone, '13800138000');
-  assert.equal(latestBackup.config.update.latestVersion, '0.1.11');
+  assert.equal(latestBackup.config.update.latestVersion, '0.1.12');
 
   const timestampedBackupKeys = [...kv.dump().keys()].filter((key) => key.startsWith('app:config:backup:20'));
   assert.equal(timestampedBackupKeys.length, 1);
