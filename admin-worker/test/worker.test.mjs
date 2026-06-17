@@ -101,6 +101,7 @@ test('admin page uses browser basic auth challenge', async () => {
   assert.match(html, /大模型模块/);
   assert.match(html, /id="panel-models"/);
   assert.match(html, /id="panel-moments"/);
+  assert.match(html, /class="planner-top"/);
   assert.match(html, /id="momentCalendar"/);
   assert.match(html, /id="momentPoolList"/);
   assert.match(html, /x-admin-config-scope/);

@@ -1607,7 +1607,8 @@ function renderAdminLandingHtml(publicBaseUrl, initialTab = 'update') {
     .model-status { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .moments-planner { display: grid; gap: 18px; }
     .moments-planner .toolbar { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: flex; justify-content: space-between; gap: 14px; align-items: center; flex-wrap: wrap; }
-    .moments-planner .planner { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(320px, 420px); gap: 18px; align-items: start; }
+    .moments-planner .planner { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+    .moments-planner .planner-top { display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 18px; align-items: start; }
     .moments-planner .planner-panel { background: #fffefa; border: 1px solid #e5ded1; border-radius: 8px; padding: 16px; display: grid; gap: 14px; }
     .moments-planner .calendar-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .moments-planner .weekday-grid, .moments-planner .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
@@ -1627,7 +1628,7 @@ function renderAdminLandingHtml(publicBaseUrl, initialTab = 'update') {
     .moments-planner .hidden-file-input { display: none; }
     .moments-planner .drop-zone { border: 1px dashed #b9c8bf; border-radius: 8px; background: #f5fbf7; padding: 14px; color: #2e7869; text-align: center; cursor: pointer; }
     .moments-planner .drop-zone.drag-over, .moments-planner .entry-card.drag-over { border-color: #2e7869; background: #eef9f3; }
-    .moments-planner .pool-panel { max-height: calc(100vh - 190px); overflow: auto; }
+    .moments-planner .pool-panel { max-height: none; overflow: visible; }
     .moments-planner .pool-list { display: grid; gap: 10px; }
     .moments-planner .pool-card { border: 1px solid #e0d7c8; border-radius: 8px; background: #fff; padding: 12px; display: grid; gap: 10px; }
     .moments-planner .pool-card textarea { min-height: 74px; }
@@ -1637,7 +1638,7 @@ function renderAdminLandingHtml(publicBaseUrl, initialTab = 'update') {
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes savedPulse { 0% { transform: scale(.98); } 45% { transform: scale(1.03); } 100% { transform: scale(1); } }
     @keyframes statusPop { 0% { opacity: .35; transform: translateY(-4px); } 100% { opacity: 1; transform: translateY(0); } }
-    @media (max-width: 1180px) { .moments-planner .planner, .moments-planner .grid2, .moments-planner .material-row { grid-template-columns: 1fr; } .moments-planner .day { min-height: 62px; } }
+    @media (max-width: 1180px) { .moments-planner .planner-top, .moments-planner .grid2, .moments-planner .material-row { grid-template-columns: 1fr; } .moments-planner .day { min-height: 62px; } }
     @media (max-width: 980px) { .grid2, .grid3, .usage-grid, .usage-line, .prompt-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -1814,18 +1815,20 @@ function renderAdminLandingHtml(publicBaseUrl, initialTab = 'update') {
           </div>
         </div>
         <div class="planner">
-          <section class="planner-panel">
-            <div class="calendar-head">
-              <button id="momentPrevMonth">上个月</button>
-              <strong id="momentMonthTitle"></strong>
-              <button id="momentNextMonth">下个月</button>
-            </div>
-            <div class="weekday-grid"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
-            <div class="calendar-grid" id="momentCalendar"></div>
-          </section>
-          <section class="planner-panel">
-            <div class="entry-list" id="momentEntryList"></div>
-          </section>
+          <div class="planner-top">
+            <section class="planner-panel">
+              <div class="calendar-head">
+                <button id="momentPrevMonth">上个月</button>
+                <strong id="momentMonthTitle"></strong>
+                <button id="momentNextMonth">下个月</button>
+              </div>
+              <div class="weekday-grid"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+              <div class="calendar-grid" id="momentCalendar"></div>
+            </section>
+            <section class="planner-panel">
+              <div class="entry-list" id="momentEntryList"></div>
+            </section>
+          </div>
           <section class="planner-panel pool-panel">
             <div class="entry-head">
               <div>
