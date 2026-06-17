@@ -203,10 +203,15 @@ export function MomentsPage(): JSX.Element {
     setLoading('today');
     setError('');
     try {
-      setTodaySuggestion(await window.electron.generateTodayMomentSuggestion());
-      message.success('今日朋友圈建议已生成');
+      const result = await window.electron.generateTodayMomentSuggestion();
+      setTodaySuggestion(result);
+      if (result.warnings?.length) {
+        message.warning('已先生成可用文案，部分 AI 二创稍后可重新生成');
+      } else {
+        message.success('今日朋友圈建议已生成');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '今日朋友圈建议生成失败，请重新尝试。');
+      setError(friendlyTodayMomentError(err));
     } finally {
       setLoading('');
     }
@@ -269,7 +274,15 @@ export function MomentsPage(): JSX.Element {
                   </Button>
                 </section>
 
-                {loading === 'today' && <Alert type="info" showIcon message="正在获取今日朋友圈内容并生成建议..." />}
+                {loading === 'today' && <Alert type="info" showIcon message="正在读取后台今日规划，并生成今天可发的朋友圈..." />}
+                {todaySuggestion?.warnings?.length ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="部分 AI 二创等待时间较长"
+                    description={todaySuggestion.warnings[0]}
+                  />
+                ) : null}
 
                 <div className="tool-grid">
                   <Card title="AI 二创文案" variant="borderless">
@@ -280,6 +293,7 @@ export function MomentsPage(): JSX.Element {
                         {todayEntries.map((entry, index) => (
                           <div className="version-card" key={entry.id}>
                             <strong>{todaySuggestion.date} 朋友圈文案 {index + 1}</strong>
+                            {entry.warning ? <Alert type="warning" showIcon message={entry.warning} /> : null}
                             <p>{entry.rewriteContent}</p>
                             <Space wrap>
                               <Button icon={<Copy size={15} />} onClick={() => copyText(entry.rewriteContent, `今日朋友圈文案 ${index + 1}`)}>
@@ -500,6 +514,15 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function friendlyTodayMomentError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (/AbortError|aborted|timeout|timed out|operation was aborted/iu.test(message)) {
+    return '今日朋友圈建议生成等待时间较长，请稍后重新生成；已配置的后台素材不会丢失。';
+  }
+  const cleaned = message.replace(/^Error invoking remote method '[^']+':\s*/u, '').trim();
+  return cleaned || '今日朋友圈建议生成失败，请重新尝试。';
 }
 
 function inferImageType(base64Image: string): 'svg+xml' | 'png' {

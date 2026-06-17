@@ -357,19 +357,46 @@ APP 本次固定执行要求：
   }
 
   async generateTodayMomentSuggestion(rawContent: string): Promise<Pick<TodayMomentSuggestionResult, 'rewriteContent'>> {
-    const generated = await this.generateJsonWithLanguageModel<{ rewriteContent?: string; results?: Array<{ text?: string }> }>(
-      await this.promptService.buildPrompt('moments-rewrite', {
-        originalText: rawContent,
-        style: '\u4eca\u65e5\u670b\u53cb\u5708\u5efa\u8bae'
-      })
-    );
-    const rewriteContent = generated?.rewriteContent?.trim() ||
-      generated?.results?.map((item) => item.text?.trim()).find(Boolean);
+    const prompt = await this.promptService.buildPrompt('moments-rewrite', {
+      originalText: rawContent,
+      style: '今日朋友圈建议'
+    });
+    const generatedText = await this.generateTextWithLanguageModel(this.withTodayMomentRuntimeRequest(prompt, rawContent));
+    const rewriteContent = generatedText ? this.normalizeTodayMomentSuggestionResponse(generatedText) : '';
     if (rewriteContent) return { rewriteContent };
 
-    return {
-      rewriteContent: `${rawContent.trim()}\n\n今天就把这段小记录发出来，真实一点，也刚刚好。`
-    };
+    throw new Error('AI 没有返回可用的今日朋友圈文案');
+  }
+
+  private withTodayMomentRuntimeRequest(prompt: string, rawContent: string): string {
+    return `${prompt}
+
+---
+APP 本次固定执行要求：
+后台今日朋友圈原始内容：${rawContent.trim()}
+本次只生成 1 条可直接发布的朋友圈文案。
+保留原内容的核心事实和表达重点，改得更像真人朋友圈，不要写成广告，不要输出 3 条版本。
+只输出最终朋友圈文案正文，不输出 JSON、编号、解释、分析或标题。`;
+  }
+
+  private normalizeTodayMomentSuggestionResponse(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed) return '';
+
+    try {
+      const parsed = JSON.parse(this.extractJson(trimmed)) as {
+        rewriteContent?: unknown;
+        results?: Array<{ text?: unknown }>;
+        text?: unknown;
+        content?: unknown;
+      };
+      return this.textValue(parsed.rewriteContent) ||
+        parsed.results?.map((item) => this.textValue(item.text)).find(Boolean) ||
+        this.textValue(parsed.text) ||
+        this.textValue(parsed.content);
+    } catch {
+      return this.splitMomentPlainTextVersions(trimmed)[0] || this.cleanMomentPlainText(trimmed);
+    }
   }
 
   async buildMomentImagePrompt(

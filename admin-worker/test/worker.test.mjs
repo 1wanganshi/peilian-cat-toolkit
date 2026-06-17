@@ -30,8 +30,8 @@ test('public config endpoint returns prompts-only defaults', async () => {
   assert.equal(body.models, undefined);
   assert.equal(body.momentPlans, undefined);
   assert.equal(body.momentPool, undefined);
-  assert.equal(body.update.latestVersion, '0.1.10');
-  assert.match(body.update.downloadUrl, /v0\.1\.10\/Setup\.0\.1\.10\.exe/);
+  assert.equal(body.update.latestVersion, '0.1.11');
+  assert.match(body.update.downloadUrl, /v0\.1\.11\/Setup\.0\.1\.11\.exe/);
 });
 
 test('saved stale update config is promoted to current app release', async () => {
@@ -54,13 +54,13 @@ test('saved stale update config is promoted to current app release', async () =>
 
   const configResponse = await worker.fetch(new Request('https://example.com/api/config'), env);
   const configBody = await configResponse.json();
-  assert.equal(configBody.update.latestVersion, '0.1.10');
-  assert.match(configBody.update.downloadUrl, /v0\.1\.10\/Setup\.0\.1\.10\.exe/);
+  assert.equal(configBody.update.latestVersion, '0.1.11');
+  assert.match(configBody.update.downloadUrl, /v0\.1\.11\/Setup\.0\.1\.11\.exe/);
   assert.equal(configBody.update.force, true);
 
   const checkResponse = await worker.fetch(new Request('https://example.com/api/update/check?currentVersion=0.1.2'), env);
   const checkBody = await checkResponse.json();
-  assert.equal(checkBody.latestVersion, '0.1.10');
+  assert.equal(checkBody.latestVersion, '0.1.11');
   assert.equal(checkBody.hasUpdate, true);
 });
 
@@ -207,7 +207,7 @@ test('partial admin config update keeps authorization and usage data', async () 
     headers,
     body: JSON.stringify({
       update: {
-        latestVersion: '0.1.10',
+        latestVersion: '0.1.11',
         downloadUrl: 'https://example.com/new.exe',
         releaseNotes: 'new'
       }
@@ -219,7 +219,7 @@ test('partial admin config update keeps authorization and usage data', async () 
   assert.equal(save.status, 200);
 
   const body = await save.json();
-  assert.equal(body.config.update.latestVersion, '0.1.10');
+  assert.equal(body.config.update.latestVersion, '0.1.11');
   assert.equal(body.config.authorizedUsers.length, 1);
   assert.equal(body.config.authorizedUsers[0].phone, '13800138000');
   assert.equal(body.config.usageRecords.length, 1);
@@ -250,7 +250,7 @@ test('admin config update stores a recoverable backup before saving', async () =
       'x-admin-password': '12345678',
       'content-type': 'application/json'
     },
-    body: JSON.stringify({ update: { latestVersion: '0.1.10' } })
+    body: JSON.stringify({ update: { latestVersion: '0.1.11' } })
   }), {
     CONFIG: kv,
     PUBLIC_BASE_URL: 'https://example.com'
@@ -259,7 +259,7 @@ test('admin config update stores a recoverable backup before saving', async () =
 
   const latestBackup = JSON.parse(kv.dump().get('app:config:backup:latest'));
   assert.equal(latestBackup.config.authorizedUsers[0].phone, '13800138000');
-  assert.equal(latestBackup.config.update.latestVersion, '0.1.10');
+  assert.equal(latestBackup.config.update.latestVersion, '0.1.11');
 
   const timestampedBackupKeys = [...kv.dump().keys()].filter((key) => key.startsWith('app:config:backup:20'));
   assert.equal(timestampedBackupKeys.length, 1);
@@ -639,6 +639,46 @@ test('admin can create and app can read active today moment plan', async () => {
   assert.equal(today.plans[0].rawContent, '今天陪孩子读完了一本英文绘本。');
   assert.equal(today.plans[0].materials.length, 2);
   assert.equal(today.plans[0].materials[1].type, 'video');
+});
+
+test('today moment plan returns lightweight URLs for inline materials', async () => {
+  const kv = createKv();
+  const env = {
+    CONFIG: kv,
+    PUBLIC_BASE_URL: 'https://example.com'
+  };
+  const headers = {
+    'x-admin-username': 'admin',
+    'x-admin-password': '12345678',
+    'content-type': 'application/json'
+  };
+  const inlineImage = `data:image/png;base64,${Buffer.from('fake-png').toString('base64')}`;
+
+  const createResponse = await worker.fetch(new Request('https://example.com/api/admin/moments/plans', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      id: 'plan-inline',
+      date: '2026-06-16',
+      rawContent: '今天陪孩子练英语。',
+      materials: [
+        { id: 'material-inline', name: '配图.png', type: 'image', url: inlineImage }
+      ],
+      status: 'active'
+    })
+  }), env);
+  assert.equal(createResponse.status, 200);
+
+  const todayResponse = await worker.fetch(new Request('https://example.com/api/moments/plans/today?date=2026-06-16'), env);
+  assert.equal(todayResponse.status, 200);
+  const today = await todayResponse.json();
+  assert.equal(today.plans[0].materials[0].url, 'https://example.com/api/moments/materials/plan-inline/material-inline');
+  assert.doesNotMatch(JSON.stringify(today), /data:image\/png;base64/);
+
+  const materialResponse = await worker.fetch(new Request(today.plans[0].materials[0].url), env);
+  assert.equal(materialResponse.status, 200);
+  assert.equal(materialResponse.headers.get('content-type'), 'image/png');
+  assert.equal(await materialResponse.text(), 'fake-png');
 });
 
 test('same day can have multiple active moment plans', async () => {

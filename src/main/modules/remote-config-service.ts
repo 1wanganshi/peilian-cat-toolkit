@@ -89,7 +89,7 @@ export class RemoteConfigService {
 
   async getTodayMomentPlan(date = this.todayDateString()): Promise<MomentPlan[]> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const url = new URL(buildApiUrl(this.baseUrl(), '/api/moments/plans/today'));
       url.searchParams.set('date', date);
@@ -105,6 +105,11 @@ export class RemoteConfigService {
         throw new Error(`读取今日朋友圈规划失败：HTTP ${response.status}`);
       }
       return this.normalizeTodayMomentPlans(await response.json(), date);
+    } catch (error) {
+      if (this.isAbortError(error)) {
+        throw new Error('后台今日朋友圈规划读取超时，请稍后重试；如果当天素材图片很大，建议在后台压缩后再保存。');
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -183,6 +188,10 @@ export class RemoteConfigService {
 
   baseUrl(): string {
     return (process.env.PEILIAN_REMOTE_CONFIG_URL || DEFAULT_BACKEND_URL).trim().replace(/\/+$/u, '');
+  }
+
+  private isAbortError(error: unknown): boolean {
+    return error instanceof Error && /AbortError|aborted|operation was aborted/iu.test(`${error.name} ${error.message}`);
   }
 
   private normalizeConfig(config: RemoteAppConfig): RemoteAppConfig {

@@ -3,6 +3,7 @@ import type {
   MomentsGenerateTextResult,
   MomentsImageResult,
   MomentsRewriteResult,
+  TodayMomentSuggestionItem,
   TodayMomentSuggestionResult
 } from '../../shared/types';
 import { app } from 'electron';
@@ -18,6 +19,7 @@ export class MomentsGenerator {
   private readonly aiService = new AiService();
   private readonly imageService = new ImageService();
   private readonly remoteConfigService = new RemoteConfigService();
+  private readonly todaySuggestionTimeoutMs = 35000;
 
   async rewriteMoments(originalText: string, style: string): Promise<MomentsRewriteResult> {
     if (!originalText.trim()) {
@@ -110,23 +112,68 @@ export class MomentsGenerator {
 
   async generateTodaySuggestion(): Promise<TodayMomentSuggestionResult> {
     const plans = await this.getTodayPlan();
-    const entries = await Promise.all(plans.map(async (plan) => {
-      const { rewriteContent } = await this.aiService.generateTodayMomentSuggestion(plan.rawContent);
+    const entries = await Promise.all(plans.map((plan) => this.generateTodaySuggestionEntry(plan)));
+    const first = entries[0];
+    const warnings = entries.map((entry) => entry.warning).filter((warning): warning is string => Boolean(warning));
+    return {
+      date: plans[0]?.date ?? this.todayDateString(),
+      rawContent: first?.rawContent ?? '',
+      rewriteContent: first?.rewriteContent ?? '',
+      materials: entries.flatMap((entry) => entry.materials),
+      entries,
+      warnings
+    };
+  }
+
+  private async generateTodaySuggestionEntry(plan: MomentPlan): Promise<TodayMomentSuggestionItem> {
+    try {
+      const { rewriteContent } = await this.withTimeout(
+        this.aiService.generateTodayMomentSuggestion(plan.rawContent),
+        this.todaySuggestionTimeoutMs
+      );
       return {
         id: plan.id,
         rawContent: plan.rawContent,
         rewriteContent,
         materials: plan.materials
       };
-    }));
-    const first = entries[0];
-    return {
-      date: plans[0]?.date ?? this.todayDateString(),
-      rawContent: first?.rawContent ?? '',
-      rewriteContent: first?.rewriteContent ?? '',
-      materials: entries.flatMap((entry) => entry.materials),
-      entries
-    };
+    } catch (error) {
+      return {
+        id: plan.id,
+        rawContent: plan.rawContent,
+        rewriteContent: this.fallbackTodayRewrite(plan.rawContent),
+        materials: plan.materials,
+        warning: this.todaySuggestionWarning(error)
+      };
+    }
+  }
+
+  private async withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        task,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('AI 生成等待时间较长，已先返回后台原文整理版。')), timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private fallbackTodayRewrite(rawContent: string): string {
+    const text = rawContent.trim();
+    if (!text) return '今天这条朋友圈后台还没有填写文案，可以先使用配置好的素材。';
+    return `${text}\n\n今天先把这段记录整理出来，真实一点发出去就很好。`;
+  }
+
+  private todaySuggestionWarning(error: unknown): string {
+    const message = error instanceof Error ? error.message : '';
+    if (/abort|timeout|timed out|aborted|超时|等待时间较长/iu.test(message)) {
+      return 'AI 生成等待时间较长，已先返回后台原文整理版；可以稍后点“重新生成”。';
+    }
+    return 'AI 二创暂时没有成功，已先返回后台原文整理版；可以稍后点“重新生成”。';
   }
 
   private todayDateString(): string {

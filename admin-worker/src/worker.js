@@ -5,11 +5,11 @@ const ADMIN_CONFIG_SCOPE_HEADER = 'x-admin-config-scope';
 const MOMENTS_CONFIG_SCOPE = 'moments';
 const USER_PHONE_HEADER = 'x-user-phone';
 const CURRENT_APP_RELEASE = {
-  latestVersion: '0.1.10',
-  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.10/Setup.0.1.10.exe',
-  releaseNotes: '优化前端大模型模块：选择“王安实自用私密大模型”后显示同步动效和“一键同步”按钮，同步后台大模型成功后显示“已同步”；同时补强前后端私密模型联通检查。',
+  latestVersion: '0.1.11',
+  downloadUrl: 'https://github.com/1wanganshi/peilian-cat-toolkit/releases/download/v0.1.11/Setup.0.1.11.exe',
+  releaseNotes: '修复“今日朋友圈建议”读取大素材导致等待过长和 AbortError：后台今日规划改为轻量素材链接，前端并发生成文案并提供中文超时兜底提示。',
   force: false,
-  publishedAt: '2026-06-17T08:55:00.000Z'
+  publishedAt: '2026-06-17T10:29:00.000Z'
 };
 
 const DEFAULT_CONFIG = {
@@ -138,7 +138,13 @@ export default {
           .filter((item) => item.date === date && item.status === 'active')
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.updatedAt.localeCompare(b.updatedAt));
         if (!plans.length) return jsonResponse({ error: '今天暂未配置朋友圈内容，请联系管理员。' }, 404);
-        return jsonResponse({ date, plans });
+        return jsonResponse({ date, plans: plans.map((plan) => publicMomentPlan(plan, url.origin)) });
+      }
+
+      const publicMaterialMatch = url.pathname.match(/^\/api\/moments\/materials\/([^/]+)\/([^/]+)$/);
+      if (publicMaterialMatch && request.method === 'GET') {
+        const config = await readConfig(env);
+        return publicMomentMaterialResponse(config, decodeURIComponent(publicMaterialMatch[1]), decodeURIComponent(publicMaterialMatch[2]));
       }
 
       if (url.pathname === '/api/models/private/status' && request.method === 'GET') {
@@ -776,6 +782,60 @@ function normalizeMomentMaterial(input) {
     type,
     url: text(input?.url)
   };
+}
+
+function publicMomentPlan(plan, origin) {
+  return {
+    ...plan,
+    materials: (plan.materials || []).map((material) => publicMomentMaterial(plan.id, material, origin))
+  };
+}
+
+function publicMomentMaterial(planId, material, origin) {
+  const url = text(material?.url);
+  if (!url.startsWith('data:')) return material;
+  return {
+    ...material,
+    url: `${origin}/api/moments/materials/${encodeURIComponent(planId)}/${encodeURIComponent(material.id)}`,
+    inlineData: false
+  };
+}
+
+function publicMomentMaterialResponse(config, planId, materialId) {
+  const plans = Array.isArray(config.momentPlans) ? config.momentPlans : [];
+  const plan = plans.find((item) => item.id === planId && item.status === 'active');
+  const material = plan?.materials?.find((item) => item.id === materialId);
+  if (!material?.url) return jsonResponse({ error: '素材不存在' }, 404);
+  if (!material.url.startsWith('data:')) return redirectResponse(material.url, 302);
+
+  const parsed = parseDataUrl(material.url);
+  if (!parsed) return jsonResponse({ error: '素材格式无效' }, 415);
+  return withCors(new Response(parsed.bytes, {
+    status: 200,
+    headers: {
+      'content-type': parsed.contentType,
+      'cache-control': 'public, max-age=3600',
+      'content-disposition': `inline; filename="${encodeURIComponent(material.name || 'moment-material')}"`
+    }
+  }));
+}
+
+function parseDataUrl(value) {
+  const match = String(value || '').match(/^data:([^;,]+)?(;base64)?,([\s\S]*)$/u);
+  if (!match || !match[2]) return undefined;
+  try {
+    const binary = atob(match[3]);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return {
+      contentType: match[1] || 'application/octet-stream',
+      bytes
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizePlanStatus(value) {

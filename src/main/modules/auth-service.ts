@@ -72,12 +72,12 @@ export class AuthService {
 
   async recordUsage(input: UsageInput): Promise<void> {
     const session = await this.requireAuthorized();
-    await this.postUsage({
+    void this.postUsage({
       phone: session.phone,
       module: input.module,
       action: input.action,
       summary: input.summary || ''
-    });
+    }).catch(() => undefined);
   }
 
   normalizePhone(phone: string): string {

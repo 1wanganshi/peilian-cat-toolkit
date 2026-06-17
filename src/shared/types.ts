@@ -100,6 +100,7 @@ export interface TodayMomentSuggestionItem {
   rawContent: string;
   rewriteContent: string;
   materials: MomentMaterial[];
+  warning?: string;
 }
 
 export interface TodayMomentSuggestionResult {
@@ -108,6 +109,7 @@ export interface TodayMomentSuggestionResult {
   rewriteContent: string;
   materials: MomentMaterial[];
   entries: TodayMomentSuggestionItem[];
+  warnings?: string[];
 }
 
 export type ArticleContentType = 'list' | 'tips' | 'mistakes' | 'comparison' | 'recommendation';
