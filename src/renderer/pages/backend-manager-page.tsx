@@ -43,17 +43,9 @@ export function BackendManagerPage(): JSX.Element {
         ghost
         className="advanced-collapse"
       items={[
-          { key: 'models', label: '高级设置：模型管理', children: <ModelManagerPanel /> }
+          { key: 'models', label: '高级设置：模型管理', children: <ModelUsagePanel /> }
       ]}
     />
-    </div>
-  );
-}
-
-export function ModelSettingsPage(): JSX.Element {
-  return (
-    <div className="single-column">
-      <ModelUsagePanel />
     </div>
   );
 }

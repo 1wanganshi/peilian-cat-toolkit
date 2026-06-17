@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { Button } from 'antd';
-import { Bot, FileText, History, ImagePlus, LogOut, MessageCircle, ServerCog } from 'lucide-react';
+import { FileText, History, ImagePlus, LogOut, MessageCircle, ServerCog } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { UserAuthSession } from '../../shared/types';
 
@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { path: '/moments', label: 'AI 朋友圈', icon: MessageCircle },
   { path: '/articles', label: '图文发布', icon: ImagePlus },
   { path: '/history', label: '历史记录', icon: History },
-  { path: '/models', label: '模型设置', icon: Bot },
   { path: '/backend', label: '更新及授权', icon: ServerCog, modelAdminOnly: true }
 ];
 
@@ -18,7 +17,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/moments': 'AI 朋友圈',
   '/articles': '图文发布工具',
   '/history': '历史记录',
-  '/models': '模型设置',
   '/backend': '更新及授权'
 };
 

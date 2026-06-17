@@ -51,7 +51,7 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release view "v$version" 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Add private/own model switching, fix script generation so model failures surface clearly instead of using preset templates, embed Moments planning into the main admin page, and preserve Moments pool materials across backend saves."
+            gh release create "v$version" --target main --title "Peilian Cat Toolkit v$version" --notes "Move frontend model management into Update and Authorization advanced settings, remove the standalone Model Settings sidebar entry, and keep the old /models route redirecting safely."
           }
 
       - name: Upload installer

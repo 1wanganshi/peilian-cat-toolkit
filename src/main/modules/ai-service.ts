@@ -106,7 +106,7 @@ export class AiService {
       if (generated) return generated;
     }
 
-    throw new Error('短视频脚本没有调用到可用大模型，请在模型设置中启用文字大模型，或检查“王安实自用私密模型”后台配置。');
+    throw new Error('短视频脚本没有调用到可用大模型，请在“更新及授权”的“高级设置：模型管理”中启用文字大模型，或检查“王安实自用私密模型”后台配置。');
   }
 
   private normalizeVideoScriptResponse(
